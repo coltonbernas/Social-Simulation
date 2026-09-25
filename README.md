@@ -1,2 +1,2 @@
 # Social-Simulation
-social simulation for our capstone project 
+Social simulation for our Capstone project 
