@@ -1,0 +1,14 @@
+TO ADD:
+SPAWN RADIUS
+    not near other agents
+    not near fruit
+SIGHT RANGE/INTELLIGENCE
+INFO SHARING
+FRUIT MONITORING
+    When things are collected
+    order
+    postgame stats
+SIMULATE MULTIPLE STEPS AT ONCE
+GENERATIONAL ROUNDS
+    fruit = agents-2 OR last 20% rounded up to get a fruit loses
+    last man standing

@@ -1,27 +1,27 @@
-import string
-import math
 import random
+from config import grid_rows, grid_cols, fruit_count
+
+class World:
+    def __init__(self, rows=grid_rows, cols=grid_cols, fruit=fruit_count):
+        self.fruit = fruit
+        self.rows = rows
+        self.cols = cols
+        self.grid = [[0 for _ in range(rows)] for _ in range(cols)]
+        self.place_fruit(fruit)
+        self.turnNo = 0;
 
 
-rows = 15
-cols = 15
+    def place_fruit(self, count):
+        placed = 0
+        while placed < count:
+            posx = random.randint(0,self.cols-1)
+            posy = random.randint(0,self.rows-1)
 
-fruit = 4
+            if self.grid[posx][posy] == 0:
+                self.grid[posx][posy] = 1
+                placed += 1
 
-gridArray = [[0 for _ in range(rows)] for _ in range(cols)]
-
-placed = 0
-
-for i in range(fruit):
-    while placed < fruit:
-        posx = random.randint(0,cols-1)
-        posy = random.randint(0,rows-1)
-
-        if gridArray[posx][posy] == 0:
-            gridArray[posx][posy] = 1
-            placed += 1
-
-for i in range(rows):
-    for j in range(cols):
-        print(gridArray[i][j], end=" ")
-    print()
+        for i in range(self.rows):
+            for j in range(self.cols):
+                print(self.grid[i][j], end=" ")
+            print()
