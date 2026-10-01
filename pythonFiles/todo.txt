@@ -1,7 +1,4 @@
 TO ADD:
-SPAWN RADIUS
-    not near other agents
-    not near fruit
 SIGHT RANGE/INTELLIGENCE
 INFO SHARING
 FRUIT MONITORING

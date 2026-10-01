@@ -7,14 +7,21 @@ def main():
     world_obj = World()
     pop = Population(world_obj=world_obj)
 
+    max_turns = 10000
+
     print(f"World created with {world_obj.rows} rows and {world_obj .cols} columns, placed {len(pop.agents)} agents.")
 
-    while True:
-        time.sleep(3)
+    for turn in range(1, max_turns + 1):
+        if world_obj.fruit == 0:
+            print(f"All fruit picked up simulation done")
+            break
+
+        time.sleep(0.1)
         print("Turn {}:".format(world_obj.turnNo))
         pop.step_agents(world_obj)
-
         print()
+
+
 
 
 
