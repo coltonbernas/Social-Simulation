@@ -16,7 +16,7 @@ def main():
             print(f"All fruit picked up simulation done")
             break
 
-        time.sleep(0.1)
+        time.sleep(1)
         print("Turn {}:".format(world_obj.turnNo))
         pop.step_agents(world_obj)
         print()
