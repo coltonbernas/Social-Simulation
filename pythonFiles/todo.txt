@@ -5,6 +5,7 @@ FRUIT MONITORING
     order
     postgame stats
 SIMULATE MULTIPLE STEPS AT ONCE
+POP OUT WINDOW WITH ANIMATIONS
 GENERATIONAL ROUNDS
     fruit = agents-2 OR last 20% rounded up to get a fruit loses
     last man standing
