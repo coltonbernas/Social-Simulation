@@ -7,8 +7,9 @@ class World:
         self.rows = rows
         self.cols = cols
         self.grid = [[0 for _ in range(rows)] for _ in range(cols)]
+        self.agent_grid = [[0 for _ in range(cols)] for _ in range(rows)]
         self.place_fruit(fruit)
-        self.turnNo = 0;
+        self.turnNo = 0
 
 
     def place_fruit(self, count):

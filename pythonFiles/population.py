@@ -4,10 +4,10 @@ from pythonFiles import world
 
 
 class Population:
-    def __init__(self, count=agent_count):
-        self.agents = [Agent(agent_id=i) for i in range(count)]
+    def __init__(self, world_obj, count=agent_count):
+        self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
         
     def step_agents(self, world_obj):
         for agent in self.agents:
             agent.move(world_obj)
-        world_obj.turnNo +=1;
+        world_obj.turnNo +=1
