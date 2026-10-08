@@ -1,5 +1,4 @@
 TO ADD:
-POP OUT WINDOW WITH ANIMATIONS
 (Maybe, might not need) GENERATIONAL ROUNDS
     fruit = agents-2 OR last 20% rounded up to get a fruit loses
     last man standing
