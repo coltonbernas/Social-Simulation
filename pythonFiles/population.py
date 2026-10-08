@@ -1,6 +1,9 @@
-from agent import Agent
-from config import agent_count
-from pythonFiles import world
+try:
+    from .agent import Agent
+    from .config import agent_count
+except ImportError:
+    from agent import Agent
+    from config import agent_count
 
 
 class Population:

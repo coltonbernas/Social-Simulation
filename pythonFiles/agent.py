@@ -1,6 +1,9 @@
 import random
 
-from pythonFiles.config import grid_rows, grid_cols
+try:
+    from .config import grid_rows, grid_cols
+except ImportError:
+    from config import grid_rows, grid_cols
 
 
 class Agent:

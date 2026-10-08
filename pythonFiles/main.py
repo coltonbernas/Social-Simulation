@@ -1,7 +1,12 @@
+import sys
 import time
 
-from world import World
-from population import Population
+try:
+    from .world import World
+    from .population import Population
+except ImportError:
+    from world import World
+    from population import Population
 
 
 def get_batch_size():
@@ -50,4 +55,11 @@ def main():
     pop.print_stat_card(world_obj)
 
 if __name__ == "__main__":
-    main()
+    if "--console" in sys.argv:
+        main()
+    else:
+        try:
+            from .popout import launch
+        except ImportError:
+            from popout import launch
+        launch()
