@@ -9,6 +9,33 @@ except ImportError:
 class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols):
         self.id = agent_id+1
+        self.age = None
+        self.intelligence = None
+        self.health = None
+        self.willpower = None
+        self.mental_health = None
+        self.wealth = None
+        self.political_status = None
+        self.birth_place = None
+        self.birth_date = None
+        self.ethnicity = None
+        self.immigration_status = None
+        self.personality_type = None
+        self.inheritance = None
+        self.genes = []
+        self.religion = None
+        self.education = None
+        self.marital_status = None
+        self.morality = None
+        self.empathy = None
+        self.resilience = None
+        self.agreeableness = None
+        self.openness = None
+        self.implusiveness = None
+        self.creativity = None
+        self.needs = {}
+        self.confidence = None
+
         self.pos_x, self.pos_y  = self.get_safe_spawn_pos(world_obj, rows, cols)
         # Cells observed or reported to contain no fruit.
         self.known_empty = set()
