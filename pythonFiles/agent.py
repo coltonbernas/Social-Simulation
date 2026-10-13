@@ -6,11 +6,21 @@ except ImportError:
     from config import grid_rows, grid_cols
 
 
+def random_intelligence():
+    """Sample an IQ-style score using the percentages in the supplied chart."""
+    score_range = random.choices(
+        population=[(40, 69), (70, 79), (80, 89), (90, 109), (110, 119), (120, 129), (130, 145)],
+        weights=[2.2, 6.7, 16.1, 50.0, 16.1, 6.7, 2.2],
+        k=1,
+    )[0]
+    return random.randint(*score_range)
+
+
 class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None):
         self.id = agent_id+1
         self.age = random.randint(1, 80) if age is None else age
-        self.intelligence = None
+        self.intelligence = random_intelligence()
         self.health = None
         self.willpower = None
         self.mental_health = None

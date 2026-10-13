@@ -1,6 +1,8 @@
 """Animated Tk window for the social simulation."""
+import csv
+import json
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, messagebox, ttk
 
 try:  # Support both ``python pythonFiles/main.py`` and ``python -m pythonFiles.main``.
     from .world import World
@@ -41,6 +43,7 @@ class SimulationWindow:
         ttk.Entry(controls, textvariable=self.batch_size, width=7).grid(row=1, column=1, sticky="e", pady=(7, 2))
         ttk.Button(controls, text="Run batch", command=self.run_batch).grid(row=2, column=0, columnspan=2, sticky="ew", pady=2)
         ttk.Button(controls, text="Reset", command=self.reset).grid(row=3, column=0, columnspan=2, sticky="ew", pady=2)
+        ttk.Button(controls, text="Export agents", command=self.export_agents).grid(row=4, column=0, columnspan=2, sticky="ew", pady=2)
         controls.columnconfigure(0, weight=1)
         controls.columnconfigure(1, weight=1)
 
@@ -61,6 +64,44 @@ class SimulationWindow:
         ))
         self._set_log("New simulation created. Use Start, Step, or Run batch.")
         self.draw()
+
+    def export_agents(self):
+        """Save all current agent attributes to a CSV spreadsheet."""
+        path = filedialog.asksaveasfilename(
+            title="Export agent attributes",
+            defaultextension=".csv",
+            filetypes=[("CSV spreadsheet", "*.csv"), ("All files", "*.*")],
+            initialfile="agents.csv",
+        )
+        if not path:
+            return
+
+        agents = self.population.agents
+        fieldnames = list(dict.fromkeys(
+            key for agent in agents for key in vars(agent)
+        ))
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as output_file:
+                writer = csv.DictWriter(output_file, fieldnames=fieldnames)
+                writer.writeheader()
+                for agent in agents:
+                    row = {}
+                    for key, value in vars(agent).items():
+                        row[key] = (
+                            json.dumps(
+                                sorted(value) if isinstance(value, set) else value,
+                                ensure_ascii=False,
+                            )
+                            if isinstance(value, (dict, list, tuple, set))
+                            else value
+                        )
+                    writer.writerow(row)
+        except OSError as error:
+            messagebox.showerror("Export failed", "Could not save the spreadsheet:\n{}".format(error))
+            return
+
+        self._append_log("Exported {} agents to {}".format(len(agents), path))
+        messagebox.showinfo("Export complete", "Saved {} agent records.".format(len(agents)))
 
     def _set_log(self, message):
         self.log.configure(state="normal")
