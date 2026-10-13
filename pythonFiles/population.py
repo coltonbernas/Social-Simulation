@@ -10,6 +10,16 @@ class Population:
     def __init__(self, world_obj, count=agent_count):
         self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
 
+    def birth(self, world_obj):
+        """Create and add a newborn agent whose age is exactly 1."""
+        newborn = Agent(
+            agent_id=len(self.agents),
+            world_obj=world_obj,
+            age=1,
+        )
+        self.agents.append(newborn)
+        return newborn
+
     def share_information(self, first, second, world_obj):
         """Exchange known empty locations after two agents collide."""
         first_locations = tuple(sorted(first.known_empty))

@@ -7,9 +7,9 @@ except ImportError:
 
 
 class Agent:
-    def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols):
+    def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None):
         self.id = agent_id+1
-        self.age = None
+        self.age = random.randint(1, 80) if age is None else age
         self.intelligence = None
         self.health = None
         self.willpower = None
