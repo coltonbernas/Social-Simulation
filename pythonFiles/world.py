@@ -17,6 +17,7 @@ class World:
         self.job_application_events = []
         self.hiring_events = []
         self.job_quit_events = []
+        self.death_events = []
         self.communication_events = []
         self.disease_events = []
         self.place_buildings(buildings)
@@ -39,7 +40,7 @@ class World:
             for location, holder in self.building_jobs.items()
         )
 
-    def reopen_job(self, location, former_holder):
+    def reopen_job(self, location, former_holder, reason="left the job"):
         """Vacate a job and notify agents that its opening is available again."""
         if self.building_jobs.get(location) != former_holder.id:
             return False
@@ -50,11 +51,13 @@ class World:
             "agent_id": former_holder.id,
             "job": former_holder.job,
             "position": location,
+            "reason": reason,
         }
         self.job_quit_events.append(event)
-        print("Agent {} left the {} at ({}, {}); the job is open again. "
+        print("Agent {} {}; the {} at ({}, {}) is open again. "
               "Agents previously rejected here may reapply.".format(
-                  former_holder.id, former_holder.job, location[0], location[1]
+                  former_holder.id, reason, former_holder.job,
+                  location[0], location[1]
               ))
         return True
 

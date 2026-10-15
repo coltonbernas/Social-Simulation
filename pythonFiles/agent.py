@@ -4,13 +4,13 @@ try:
     from .config import (
         grid_rows, grid_cols, health_min, health_max,
         base_disease_transmission, disease_health_impact,
-        disease_chance_per_turn,
+        disease_chance_per_turn, hunger_drain_per_step,
     )
 except ImportError:
     from config import (
         grid_rows, grid_cols, health_min, health_max,
         base_disease_transmission, disease_health_impact,
-        disease_chance_per_turn,
+        disease_chance_per_turn, hunger_drain_per_step,
     )
 
 
@@ -27,7 +27,8 @@ def random_intelligence():
 class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None):
         self.id = agent_id+1
-        self.age = random.randint(1, 80) if age is None else age
+        self.age = random.randint(1, 30) if age is None else age
+        self.death_age = random.randint(80, 100)
         self.intelligence = random_intelligence()
         # A simple physical-health score. Healthy agents tend toward 100;
         # age and active disease lower the score over time.
@@ -37,7 +38,7 @@ class Agent:
             min(health_max, random.randint(starting_health_min, health_max) - max(0, self.age - 60)),
         )
         self.diseases = set()
-        #Gonna make this affect hard decisions
+        #Gonna make this affect hard decisions and getting a job
         self.willpower = random.randint(0, 100)
         self.mental_health = 100
         self.wealth = None
@@ -77,8 +78,10 @@ class Agent:
         self.previous_position = None
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
-        print("Agent {} spawned at ({},{}); intelligence: {}; willpower: {}".format(
-            self.id, self.pos_x, self.pos_y, self.intelligence, self.willpower
+        print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
+              "intelligence: {}; willpower: {}".format(
+            self.id, self.pos_x, self.pos_y, self.age, self.death_age,
+            self.intelligence, self.willpower
         ))
 
     def get_safe_spawn_pos(self, world_obj, rows, cols):
@@ -163,6 +166,7 @@ class Agent:
 
     def update_health(self, world_obj=None):
         """Apply health changes, including starvation and stressful events."""
+        self.hunger = max(0, self.hunger - hunger_drain_per_step)
         if not self.diseases and random.random() < disease_chance_per_turn:
             disease = "common_cold"
             self.diseases.add(disease)
@@ -370,9 +374,6 @@ class Agent:
                 self.id, other_agent_id, next_x, next_y
             ))
             return other_agent_id
-
-        # Hunger falls only when the agent successfully moves.
-        self.hunger = max(0, self.hunger - 1)
 
         old_position = (self.pos_x, self.pos_y)
         world_obj.agent_grid[self.pos_x][self.pos_y] = 0

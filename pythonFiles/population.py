@@ -9,14 +9,16 @@ except ImportError:
 class Population:
     def __init__(self, world_obj, count=agent_count):
         self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
+        self.next_agent_id = count
 
     def birth(self, world_obj):
         """Create and add a newborn agent whose age is exactly 1."""
         newborn = Agent(
-            agent_id=len(self.agents),
+            agent_id=self.next_agent_id,
             world_obj=world_obj,
             age=1,
         )
+        self.next_agent_id += 1
         self.agents.append(newborn)
         return newborn
 
@@ -69,6 +71,13 @@ class Population:
             ))
 
     def step_agents(self, world_obj):
+        # One simulation turn represents one year of aging.
+        for agent in list(self.agents):
+            if agent.age < agent.death_age:
+                agent.age += 1
+            if agent.age >= agent.death_age:
+                self._remove_agent(agent, world_obj, "natural death at age {}".format(agent.age))
+
         # Agents exchange information only when a move is blocked by another
         # agent occupying the destination cell.
         agents_by_id = {agent.id: agent for agent in self.agents}
@@ -76,9 +85,30 @@ class Population:
             other_agent_id = agent.move(world_obj)
             if other_agent_id is not None:
                 self.share_information(agent, agents_by_id[other_agent_id], world_obj)
-        for agent in self.agents:
+        for agent in list(self.agents):
+            if agent.health <= 0:
+                self._remove_agent(agent, world_obj, "zero health")
+                continue
             agent.update_health(world_obj)
+            if agent.health <= 0:
+                self._remove_agent(agent, world_obj, "zero health")
         world_obj.turnNo +=1
+
+    def _remove_agent(self, agent, world_obj, cause):
+        """Remove a dead agent and reopen any job they held."""
+        if agent.job is not None:
+            world_obj.reopen_job(
+                agent.employed_at, agent, reason="died from {}".format(cause)
+            )
+        world_obj.agent_grid[agent.pos_x][agent.pos_y] = 0
+        world_obj.death_events.append({
+            "turn": world_obj.turnNo + 1,
+            "agent_id": agent.id,
+            "age": agent.age,
+            "cause": cause,
+        })
+        self.agents.remove(agent)
+        print("Agent {} died from {} at age {}.".format(agent.id, cause, agent.age))
 
     def print_stat_card(self, world_obj):
         """Print the final building, employment and communication history."""
@@ -122,8 +152,18 @@ class Population:
         if world_obj.job_quit_events:
             for event in world_obj.job_quit_events:
                 x, y = event["position"]
-                print("  Turn {}: Agent {} left the {} at ({}, {})".format(
-                    event["turn"], event["agent_id"], event["job"], x, y
+                print("  Turn {}: Agent {} {}; {} at ({}, {}) reopened".format(
+                    event["turn"], event["agent_id"], event["reason"],
+                    event["job"], x, y
+                ))
+        else:
+            print("  None")
+
+        print("\nDeaths:")
+        if world_obj.death_events:
+            for event in world_obj.death_events:
+                print("  Turn {}: Agent {} died from {} at age {}".format(
+                    event["turn"], event["agent_id"], event["cause"], event["age"]
                 ))
         else:
             print("  None")
@@ -207,8 +247,20 @@ class Population:
         if quits:
             for event in quits:
                 x, y = event["position"]
-                print("  Turn {}: Agent {} left the {} at ({}, {})".format(
-                    event["turn"], event["agent_id"], event["job"], x, y
+                print("  Turn {}: Agent {} {}; {} at ({}, {}) reopened".format(
+                    event["turn"], event["agent_id"], event["reason"],
+                    event["job"], x, y
+                ))
+        else:
+            print("  None")
+
+        deaths = [event for event in world_obj.death_events
+                  if start_turn <= event["turn"] <= end_turn]
+        print("Deaths:")
+        if deaths:
+            for event in deaths:
+                print("  Turn {}: Agent {} died from {} at age {}".format(
+                    event["turn"], event["agent_id"], event["cause"], event["age"]
                 ))
         else:
             print("  None")

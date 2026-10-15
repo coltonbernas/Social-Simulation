@@ -169,12 +169,14 @@ class SimulationWindow:
         before_entries = len(self.world.building_entries)
         before_hires = len(self.world.hiring_events)
         before_quits = len(self.world.job_quit_events)
+        before_deaths = len(self.world.death_events)
         before_messages = len(self.world.communication_events)
         self.population.step_agents(self.world)
         print()
         added = self.world.building_entries[before_entries:]
         hires = self.world.hiring_events[before_hires:]
         quits = self.world.job_quit_events[before_quits:]
+        deaths = self.world.death_events[before_deaths:]
         messages = self.world.communication_events[before_messages:]
         for event in added:
             x, y = event["position"]
@@ -188,8 +190,13 @@ class SimulationWindow:
             ))
         for event in quits:
             x, y = event["position"]
-            self._append_log("Turn {}: Agent {} left the {} at ({}, {}); the job reopened.".format(
-                event["turn"], event["agent_id"], event["job"], x, y
+            self._append_log("Turn {}: Agent {} {}; the {} at ({}, {}) reopened.".format(
+                event["turn"], event["agent_id"], event["reason"],
+                event["job"], x, y
+            ))
+        for event in deaths:
+            self._append_log("Turn {}: Agent {} died from {} at age {}.".format(
+                event["turn"], event["agent_id"], event["cause"], event["age"]
             ))
         for event in messages:
             self._append_log("Turn {}: Agent {} shared information with Agent {}.".format(event["turn"], event["sender_id"], event["receiver_id"]))
