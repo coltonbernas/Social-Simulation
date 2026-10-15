@@ -13,6 +13,7 @@ class World:
         self.agent_grid = [[0 for _ in range(cols)] for _ in range(rows)]
         self.pickup_events = []
         self.communication_events = []
+        self.disease_events = []
         self.place_fruit(fruit)
         self.turnNo = 0
 

@@ -2,5 +2,9 @@
   "rows": 15,
   "cols": 15,
   "fruit_count": 4,
-  "agent_count": 5
+  "agent_count": 5,
+  "health_min": 0,
+  "health_max": 100,
+  "base_disease_transmission": 0.20,
+  "disease_health_impact": 20
 }

@@ -1,9 +1,15 @@
 import random
 
 try:
-    from .config import grid_rows, grid_cols
+    from .config import (
+        grid_rows, grid_cols, health_min, health_max,
+        base_disease_transmission, disease_health_impact,
+    )
 except ImportError:
-    from config import grid_rows, grid_cols
+    from config import (
+        grid_rows, grid_cols, health_min, health_max,
+        base_disease_transmission, disease_health_impact,
+    )
 
 
 def random_intelligence():
@@ -21,7 +27,10 @@ class Agent:
         self.id = agent_id+1
         self.age = random.randint(1, 80) if age is None else age
         self.intelligence = random_intelligence()
-        self.health = None
+        # A simple physical-health score. Healthy agents tend toward 100;
+        # age and active disease lower the score over time.
+        self.health = max(health_min, min(health_max, random.randint(70, health_max) - max(0, self.age - 60)))
+        self.diseases = set()
         self.willpower = None
         self.mental_health = None
         self.wealth = None
@@ -113,6 +122,39 @@ class Agent:
     def receive_message(self, empty_locations):
         """Remember cells another agent reports as empty of fruit."""
         self.known_empty.update(empty_locations)
+
+    def disease_transmission_probability(self, disease=None):
+        """Chance of catching a disease from one infectious close contact."""
+        contagiousness = (disease or {}).get("contagiousness", base_disease_transmission)
+        # Lower health increases susceptibility; healthy agents retain a
+        # modest baseline risk. Clamp to a valid probability.
+        health_range = health_max - health_min
+        health_fraction = (self.health - health_min) / health_range if health_range else 1.0
+        susceptibility = 1.5 - health_fraction * 0.5
+        return max(0.0, min(1.0, contagiousness * susceptibility))
+
+    def catch_disease(self, disease="common_cold", contagiousness=BASE_DISEASE_TRANSMISSION):
+        """Try to acquire a disease; return True if this contact infects the agent."""
+        if disease in self.diseases:
+            return False
+        if random.random() >= self.disease_transmission_probability({"contagiousness": contagiousness}):
+            return False
+        self.diseases.add(disease)
+        self.health = max(health_min, self.health - disease_health_impact)
+        return True
+
+    def update_health(self):
+        """Apply a small recovery/aging update once per simulation turn."""
+        if self.diseases:
+            self.health = max(health_min, self.health - 1)
+        else:
+            self.health = min(health_max, self.health + 1)
+
+    def heal_from_fruit(self):
+        """Clear all diseases when the agent collects a fruit; return them."""
+        healed_diseases = tuple(sorted(self.diseases))
+        self.diseases.clear()
+        return healed_diseases
 
     def move(self, world_obj, rows=grid_rows, cols=grid_cols):
         visible_fruits = self.scan_surroundings(world_obj, rows, cols)
@@ -210,6 +252,17 @@ class Agent:
         
         if world_obj.grid[self.pos_x][self.pos_y] == 1:
             world_obj.fruit-=1
+            healed_diseases = self.heal_from_fruit()
+            if healed_diseases:
+                world_obj.disease_events.append({
+                    "turn": world_obj.turnNo + 1,
+                    "agent_id": self.id,
+                    "recovered_from": healed_diseases,
+                    "health": self.health,
+                })
+                print("Agent {} recovered from {} after collecting fruit.".format(
+                    self.id, ", ".join(healed_diseases)
+                ))
             self.known_empty.add((self.pos_x, self.pos_y))
             world_obj.pickup_events.append({
                 "turn": world_obj.turnNo + 1,

@@ -46,6 +46,28 @@ class Population:
             first.id, second.id, len(first_locations), len(second_locations)
         ))
 
+        # A blocked move represents close contact. Either infectious agent
+        # may transmit to the other, with risk adjusted for the recipient's health.
+        self._try_transmission(first, second, world_obj)
+        self._try_transmission(second, first, world_obj)
+
+    @staticmethod
+    def _try_transmission(source, target, world_obj):
+        if not source.diseases:
+            return
+        disease = sorted(source.diseases)[0]
+        if target.catch_disease(disease):
+            world_obj.disease_events.append({
+                "turn": world_obj.turnNo + 1,
+                "source_id": source.id,
+                "agent_id": target.id,
+                "disease": disease,
+                "health": target.health,
+            })
+            print("Agent {} caught {} from Agent {} (health: {}).".format(
+                target.id, disease, source.id, target.health
+            ))
+
     def step_agents(self, world_obj):
         # Agents exchange information only when a move is blocked by another
         # agent occupying the destination cell.
@@ -54,6 +76,8 @@ class Population:
             other_agent_id = agent.move(world_obj)
             if other_agent_id is not None:
                 self.share_information(agent, agents_by_id[other_agent_id], world_obj)
+        for agent in self.agents:
+            agent.update_health()
         world_obj.turnNo +=1
 
     def print_stat_card(self, world_obj):
@@ -84,6 +108,11 @@ class Population:
         print("\nAgent totals:")
         for agent_id, count in pickup_counts.items():
             print("  Agent {}: {} fruit".format(agent_id, count))
+
+        print("\nAgent health:")
+        for agent in self.agents:
+            diseases = ", ".join(sorted(agent.diseases)) or "none"
+            print("  Agent {}: {}/100; diseases: {}".format(agent.id, agent.health, diseases))
 
         print("\nCommunications:")
         if world_obj.communication_events:
