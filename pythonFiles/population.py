@@ -77,7 +77,7 @@ class Population:
             if other_agent_id is not None:
                 self.share_information(agent, agents_by_id[other_agent_id], world_obj)
         for agent in self.agents:
-            agent.update_health()
+            agent.update_health(world_obj)
         world_obj.turnNo +=1
 
     def print_stat_card(self, world_obj):

@@ -4,11 +4,13 @@ try:
     from .config import (
         grid_rows, grid_cols, health_min, health_max,
         base_disease_transmission, disease_health_impact,
+        disease_chance_per_turn,
     )
 except ImportError:
     from config import (
         grid_rows, grid_cols, health_min, health_max,
         base_disease_transmission, disease_health_impact,
+        disease_chance_per_turn,
     )
 
 
@@ -149,8 +151,23 @@ class Agent:
         self.health = max(health_min, self.health - disease_health_impact)
         return True
 
-    def update_health(self):
-        """Apply a small recovery/aging update once per simulation turn."""
+    def update_health(self, world_obj=None):
+        """Apply health changes and check for naturally acquired disease."""
+        if not self.diseases and random.random() < disease_chance_per_turn:
+            disease = "common_cold"
+            self.diseases.add(disease)
+            self.health = max(health_min, self.health - disease_health_impact)
+            if world_obj is not None:
+                world_obj.disease_events.append({
+                    "turn": world_obj.turnNo + 1,
+                    "agent_id": self.id,
+                    "disease": disease,
+                    "source": "natural",
+                    "health": self.health,
+                })
+            print("Agent {} naturally contracted {} (health: {}).".format(
+                self.id, disease, self.health
+            ))
         if self.diseases:
             self.health = max(health_min, self.health - 1)
         else:
