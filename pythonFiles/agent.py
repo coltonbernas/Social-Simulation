@@ -29,7 +29,11 @@ class Agent:
         self.intelligence = random_intelligence()
         # A simple physical-health score. Healthy agents tend toward 100;
         # age and active disease lower the score over time.
-        self.health = max(health_min, min(health_max, random.randint(70, health_max) - max(0, self.age - 60)))
+        starting_health_min = min(70, health_max)
+        self.health = max(
+            health_min,
+            min(health_max, random.randint(starting_health_min, health_max) - max(0, self.age - 60)),
+        )
         self.diseases = set()
         self.willpower = None
         self.mental_health = None
@@ -133,10 +137,12 @@ class Agent:
         susceptibility = 1.5 - health_fraction * 0.5
         return max(0.0, min(1.0, contagiousness * susceptibility))
 
-    def catch_disease(self, disease="common_cold", contagiousness=BASE_DISEASE_TRANSMISSION):
+    def catch_disease(self, disease="common_cold", contagiousness=None):
         """Try to acquire a disease; return True if this contact infects the agent."""
         if disease in self.diseases:
             return False
+        if contagiousness is None:
+            contagiousness = base_disease_transmission
         if random.random() >= self.disease_transmission_probability({"contagiousness": contagiousness}):
             return False
         self.diseases.add(disease)
