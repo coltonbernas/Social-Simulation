@@ -18,6 +18,7 @@ class SimulationWindow:
     def __init__(self, root):
         self.root = root
         root.title("Social Simulation")
+        root.protocol("WM_DELETE_WINDOW", self.close_window)
         root.minsize(680, 500)
         self.world = None
         self.population = None
@@ -44,6 +45,7 @@ class SimulationWindow:
         ttk.Button(controls, text="Run batch", command=self.run_batch).grid(row=2, column=0, columnspan=2, sticky="ew", pady=2)
         ttk.Button(controls, text="Reset", command=self.reset).grid(row=3, column=0, columnspan=2, sticky="ew", pady=2)
         ttk.Button(controls, text="Export agents", command=self.export_agents).grid(row=4, column=0, columnspan=2, sticky="ew", pady=2)
+        ttk.Button(controls, text="End simulation", command=self.end_simulation).grid(row=5, column=0, columnspan=2, sticky="ew", pady=2)
         controls.columnconfigure(0, weight=1)
         controls.columnconfigure(1, weight=1)
 
@@ -55,6 +57,8 @@ class SimulationWindow:
 
     def reset(self):
         self.stop()
+        if self.world is not None and not self.final_reported:
+            self._report_finished("Simulation ended by reset.")
         self.batch_remaining = 0
         self.final_reported = False
         self.world = World()
@@ -64,6 +68,19 @@ class SimulationWindow:
         ))
         self._set_log("New simulation created. Use Start, Step, or Run batch.")
         self.draw()
+
+    def end_simulation(self):
+        self.stop()
+        self.batch_remaining = 0
+        self._append_summary()
+        self._report_finished("Simulation ended manually.")
+
+    def close_window(self):
+        self.stop()
+        if self.world is not None and not self.final_reported:
+            self._append_summary()
+            self._report_finished("Simulation ended when the window was closed.")
+        self.root.destroy()
 
     def export_agents(self):
         """Save all current agent attributes to a CSV spreadsheet."""
@@ -255,16 +272,22 @@ class SimulationWindow:
         ))
         self._append_log("Communications recorded: {}.".format(len(self.world.communication_events)))
 
-    def _report_finished(self):
+    def _report_finished(self, reason=None):
         if self.final_reported:
             return
         self.final_reported = True
-        if self.world.open_jobs == 0:
+        if reason:
+            print(reason)
+            self._append_log(reason)
+        elif self.world.open_jobs == 0:
             print("All building jobs are filled; simulation done.")
+            self._append_log("All building jobs are filled; simulation done.")
         elif not self.world.can_accept_application(self.population.agents):
             print("No more agents can apply for the remaining jobs.")
+            self._append_log("No more agents can apply for the remaining jobs.")
         elif self.world.turnNo >= 10000:
             print("Reached the 10000 turn limit.")
+            self._append_log("Reached the 10000 turn limit.")
         self.population.print_stat_card(self.world)
         self._append_log("Simulation finished.")
 
