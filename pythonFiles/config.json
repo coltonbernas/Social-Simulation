@@ -1,7 +1,7 @@
 {
   "rows": 15,
   "cols": 15,
-  "fruit_count": 4,
+  "building_count": 4,
   "agent_count": 5,
   "health_min": 0,
   "health_max": 100,

@@ -10,7 +10,7 @@ config = load_config()
 
 grid_rows = config["rows"]
 grid_cols = config["cols"]
-fruit_count = config["fruit_count"]
+building_count = config.get("building_count", config.get("fruit_count", 4))
 agent_count = config["agent_count"]
 health_min = config.get("health_min", 0)
 health_max = config.get("health_max", 100)

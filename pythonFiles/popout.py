@@ -7,11 +7,11 @@ from tkinter import filedialog, messagebox, ttk
 try:  # Support both ``python pythonFiles/main.py`` and ``python -m pythonFiles.main``.
     from .world import World
     from .population import Population
-    from .config import fruit_count
+    from .config import building_count
 except ImportError:
     from world import World
     from population import Population
-    from config import fruit_count
+    from config import building_count
 
 
 class SimulationWindow:
@@ -116,7 +116,8 @@ class SimulationWindow:
         self.log.configure(state="disabled")
 
     def _finished(self):
-        return self.world.fruit <= 0 or self.world.turnNo >= 10000
+        return (not self.world.can_accept_application(self.population.agents)
+                or self.world.turnNo >= 10000)
 
     def toggle_running(self):
         if self.running:
@@ -165,22 +166,40 @@ class SimulationWindow:
             self._report_finished()
             return
         print("Turn {}:".format(self.world.turnNo + 1))
-        before_pickups = len(self.world.pickup_events)
+        before_entries = len(self.world.building_entries)
+        before_hires = len(self.world.hiring_events)
+        before_quits = len(self.world.job_quit_events)
         before_messages = len(self.world.communication_events)
         self.population.step_agents(self.world)
         print()
-        added = self.world.pickup_events[before_pickups:]
+        added = self.world.building_entries[before_entries:]
+        hires = self.world.hiring_events[before_hires:]
+        quits = self.world.job_quit_events[before_quits:]
         messages = self.world.communication_events[before_messages:]
         for event in added:
             x, y = event["position"]
-            self._append_log("Turn {}: Agent {} picked fruit at ({}, {}).".format(event["turn"], event["agent_id"], x, y))
+            self._append_log("Turn {}: Agent {} entered type {} building at ({}, {}).".format(
+                event["turn"], event["agent_id"], event["building_type"], x, y
+            ))
+        for event in hires:
+            self._append_log("Turn {}: Agent {} got the {} (score: {}; required: {}).".format(
+                event["turn"], event["agent_id"], event["job"],
+                event["score"], event["minimum_score"]
+            ))
+        for event in quits:
+            x, y = event["position"]
+            self._append_log("Turn {}: Agent {} left the {} at ({}, {}); the job reopened.".format(
+                event["turn"], event["agent_id"], event["job"], x, y
+            ))
         for event in messages:
             self._append_log("Turn {}: Agent {} shared information with Agent {}.".format(event["turn"], event["sender_id"], event["receiver_id"]))
         self.draw()
         if self.batch_remaining:
             self.batch_remaining -= 1
             if self.batch_remaining == 0 or self._finished():
-                self._append_log("Batch complete: turns {}–{}; {} fruit remaining.".format(self.batch_start, self.world.turnNo, self.world.fruit))
+                self._append_log("Batch complete: turns {}–{}; {} jobs remain open.".format(
+                    self.batch_start, self.world.turnNo, self.world.open_jobs
+                ))
                 self.population.print_batch_report(self.world, self.batch_start, self.world.turnNo)
                 self.batch_remaining = 0
                 self.stop()
@@ -196,19 +215,23 @@ class SimulationWindow:
             self._schedule_step()
 
     def _append_summary(self):
-        totals = {agent.id: 0 for agent in self.population.agents}
-        for event in self.world.pickup_events:
-            totals[event["agent_id"]] += 1
-        self._append_log("Status: {} turns, {} fruit collected, {} remaining.".format(self.world.turnNo, len(self.world.pickup_events), self.world.fruit))
-        self._append_log("Agent totals: " + ", ".join("{}: {}".format(agent_id, count) for agent_id, count in totals.items()))
+        self._append_log("Status: {} turns, {} jobs filled, {} open.".format(
+            self.world.turnNo, len(self.world.hiring_events), self.world.open_jobs
+        ))
+        self._append_log("Agent jobs: " + ", ".join(
+            "{}: {}".format(agent.id, agent.job or "unemployed")
+            for agent in self.population.agents
+        ))
         self._append_log("Communications recorded: {}.".format(len(self.world.communication_events)))
 
     def _report_finished(self):
         if self.final_reported:
             return
         self.final_reported = True
-        if self.world.fruit == 0:
-            print("All fruit picked up; simulation done.")
+        if self.world.open_jobs == 0:
+            print("All building jobs are filled; simulation done.")
+        elif not self.world.can_accept_application(self.population.agents):
+            print("No more agents can apply for the remaining jobs.")
         elif self.world.turnNo >= 10000:
             print("Reached the 10000 turn limit.")
         self.population.print_stat_card(self.world)
@@ -230,16 +253,30 @@ class SimulationWindow:
                 x0, y0 = left + col * cell, top + row * cell
                 x1, y1 = x0 + cell, y0 + cell
                 canvas.create_rectangle(x0, y0, x1, y1, fill="white", outline="#d6dee8", width=1)
-                if self.world.grid[row][col]:
-                    pad = cell * .28
-                    canvas.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, fill="#f5b82e", outline="#ca8a04", width=1)
+                building_type = self.world.grid[row][col]
+                if building_type:
+                    pad = cell * .18
+                    color = "#f5b82e" if building_type == 1 else "#10b981"
+                    outline = "#ca8a04" if building_type == 1 else "#047857"
+                    canvas.create_rectangle(
+                        x0 + pad, y0 + pad, x1 - pad, y1 - pad,
+                        fill=color, outline=outline, width=2
+                    )
+                    canvas.create_text(
+                        (x0 + x1) / 2, (y0 + y1) / 2,
+                        text=str(building_type), fill="white",
+                        font=("Segoe UI", max(8, int(cell * .3)), "bold")
+                    )
                 agent_id = agents.get((row, col))
                 if agent_id is not None:
                     pad = cell * .12
                     color = palette[(agent_id - 1) % len(palette)]
                     canvas.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, fill=color, outline="white", width=2)
                     canvas.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=str(agent_id), fill="white", font=("Segoe UI", max(8, int(cell * .28)), "bold"))
-        self.status.configure(text="Turn: {}\nFruit remaining: {} / {}\nAgents: {}".format(self.world.turnNo, self.world.fruit, fruit_count, len(self.population.agents)))
+        self.status.configure(text="Turn: {}\nOpen jobs: {} / {}\nAgents: {}".format(
+            self.world.turnNo, self.world.open_jobs, building_count,
+            len(self.population.agents)
+        ))
 
 
 def launch():

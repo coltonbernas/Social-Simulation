@@ -41,6 +41,10 @@ class Agent:
         self.willpower = random.randint(0, 100)
         self.mental_health = 100
         self.wealth = None
+        self.job = None
+        self.employed_at = None
+        # Building coordinates map to the opening version last attempted.
+        self.applied_buildings = {}
         self.hunger_max = 100
         self.hunger = self.hunger_max
         self.active_stressful_events = set()
@@ -66,14 +70,16 @@ class Agent:
         self.confidence = None
 
         self.pos_x, self.pos_y  = self.get_safe_spawn_pos(world_obj, rows, cols)
-        # Cells observed or reported to contain no fruit.
+        # Cells observed or reported to contain no building.
         self.known_empty = set()
         self.visited_positions = {(self.pos_x, self.pos_y)}
         self.position_visits = {(self.pos_x, self.pos_y): 1}
         self.previous_position = None
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
-        print("Agent {} spawned at ({},{})".format(self.id, self.pos_x, self.pos_y))
+        print("Agent {} spawned at ({},{}); intelligence: {}; willpower: {}".format(
+            self.id, self.pos_x, self.pos_y, self.intelligence, self.willpower
+        ))
 
     def get_safe_spawn_pos(self, world_obj, rows, cols):
         attempts = 0
@@ -96,14 +102,14 @@ class Agent:
             for dy in (-1, 0, 1):
                 nx, ny = x + dx, y + dy
                 if 0 <= nx < rows and 0 <= ny < cols:
-                    if world_obj.grid[nx][ny] == 1:
+                    if world_obj.grid[nx][ny] != 0:
                             return False
                     if world_obj.agent_grid[nx][ny] != 0:
                         return False
         return True
 
     def scan_surroundings(self, world_obj, rows, cols):
-        visible_fruits = []
+        visible_buildings = []
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 if dx == 0 and dy == 0:
@@ -111,12 +117,12 @@ class Agent:
 
                 nx, ny = self.pos_x + dx, self.pos_y + dy
                 if 0 <= nx < rows and 0 <= ny < cols:
-                    if world_obj.grid[nx][ny] == 1:
-                        visible_fruits.append((nx, ny))
-        return visible_fruits
+                    if world_obj.grid[nx][ny] != 0:
+                        visible_buildings.append((nx, ny))
+        return visible_buildings
 
     def scan_empty_surroundings(self, world_obj, rows, cols):
-        """Return nearby cells that do not contain fruit."""
+        """Return nearby cells that do not contain buildings."""
         empty_locations = []
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
@@ -130,7 +136,7 @@ class Agent:
         return empty_locations
 
     def receive_message(self, empty_locations):
-        """Remember cells another agent reports as empty of fruit."""
+        """Remember cells another agent reports as building-free."""
         self.known_empty.update(empty_locations)
 
     def disease_transmission_probability(self, disease=None):
@@ -202,22 +208,61 @@ class Agent:
                 self.mental_health = max(0, self.mental_health - 2)
         self.active_stressful_events = current_events
 
-    def heal_from_fruit(self):
-        """Clear all diseases when the agent collects a fruit; return them."""
-        healed_diseases = tuple(sorted(self.diseases))
-        self.diseases.clear()
-        return healed_diseases
-
     def move(self, world_obj, rows=grid_rows, cols=grid_cols):
-        visible_fruits = self.scan_surroundings(world_obj, rows, cols)
+        if self.job == "Type 2 job":
+            print("Agent {} is staying at their type 2 job.".format(self.id))
+            return None
+
+        visible_buildings = self.scan_surroundings(world_obj, rows, cols)
+        job_targets = [
+            location for location, job_holder in world_obj.building_jobs.items()
+            if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
+            and self.applied_buildings.get(location)
+            != world_obj.job_opening_versions[location]
+            and job_holder is None
+        ]
         visible_empty = self.scan_empty_surroundings(world_obj, rows, cols)
         self.known_empty.update(visible_empty)
-        self.known_empty.difference_update(visible_fruits)
+        self.known_empty.difference_update(visible_buildings)
 
-        if visible_fruits:
-            target_x, target_y = visible_fruits[0]
+        if job_targets:
+            target_x, target_y = min(
+                job_targets,
+                key=lambda location: (
+                    abs(location[0] - self.pos_x) + abs(location[1] - self.pos_y),
+                    location,
+                ),
+            )
         else:
             target_x = target_y = None
+
+        # A previously rejected agent may already be standing in a building
+        # when its job reopens, so it can apply again without walking out and back in.
+        if (target_x, target_y) == (self.pos_x, self.pos_y):
+            self.apply_for_job(
+                world_obj,
+                world_obj.grid[self.pos_x][self.pos_y],
+                (self.pos_x, self.pos_y),
+            )
+            job_targets = [
+                location for location, job_holder in world_obj.building_jobs.items()
+                if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
+                and self.applied_buildings.get(location)
+                != world_obj.job_opening_versions[location]
+                and job_holder is None
+            ]
+            if self.job == "Type 2 job":
+                return None
+            if job_targets:
+                target_x, target_y = min(
+                    job_targets,
+                    key=lambda location: (
+                        abs(location[0] - self.pos_x) + abs(location[1] - self.pos_y),
+                        location,
+                    ),
+                )
+            else:
+                target_x = target_y = None
 
         preferred_moves = []
         if target_x is not None:
@@ -228,14 +273,17 @@ class Agent:
                 preferred_moves = [(step_x, 0), (0, step_y)]
             else:
                 preferred_moves = [(step_x, step_y)]
-            if (target_x, target_y) in visible_fruits:
-                print("Agent {} spotted a fruit at ({},{})!".format(self.id, target_x, target_y))
+            if (target_x, target_y) in visible_buildings:
+                print("Agent {} spotted a type {} building at ({}, {}).".format(
+                    self.id, world_obj.grid[target_x][target_y], target_x, target_y
+                ))
 
         possible_moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]
         unexplored_moves = []
         new_position_moves = []
         legal_preferred_moves = []
         fallback_moves = []
+        blocked_moves = []
         move_destinations = {}
         for move_x, move_y in possible_moves:
             next_x = max(0, min(rows - 1, self.pos_x + move_x))
@@ -243,6 +291,9 @@ class Agent:
             move = (move_x, move_y)
             destination = (next_x, next_y)
             if destination == (self.pos_x, self.pos_y):
+                continue
+            if world_obj.agent_grid[next_x][next_y] not in (0, self.id):
+                blocked_moves.append(move)
                 continue
             fallback_moves.append(move)
             move_destinations[move] = destination
@@ -253,11 +304,36 @@ class Agent:
             if move in preferred_moves:
                 legal_preferred_moves.append(move)
 
-        # Explore locations with unknown fruit status first, then locations
+        # Explore locations with unknown building status first, then locations
         # this agent has not physically visited. Revisit old locations only
         # when needed, preferring the least-visited route.
         if legal_preferred_moves:
             dx, dy = random.choice(legal_preferred_moves)
+        elif target_x is not None and fallback_moves:
+            current_distance = abs(target_x - self.pos_x) + abs(target_y - self.pos_y)
+            progress_moves = [
+                move for move in fallback_moves
+                if abs(move_destinations[move][0] - target_x)
+                + abs(move_destinations[move][1] - target_y) < current_distance
+            ]
+            if progress_moves:
+                best_distance = min(
+                    abs(move_destinations[move][0] - target_x)
+                    + abs(move_destinations[move][1] - target_y)
+                    for move in progress_moves
+                )
+                best_moves = [
+                    move for move in progress_moves
+                    if abs(move_destinations[move][0] - target_x)
+                    + abs(move_destinations[move][1] - target_y) == best_distance
+                ]
+                dx, dy = random.choice(best_moves)
+            elif unexplored_moves:
+                dx, dy = random.choice(unexplored_moves)
+            elif new_position_moves:
+                dx, dy = random.choice(new_position_moves)
+            else:
+                dx, dy = random.choice(fallback_moves)
         elif unexplored_moves:
             dx, dy = random.choice(unexplored_moves)
         elif new_position_moves:
@@ -278,6 +354,11 @@ class Agent:
                 if self.position_visits.get(move_destinations[move], 0) == least_visited_count
             ]
             dx, dy = random.choice(least_visited_moves)
+        elif blocked_moves:
+            # Only attempt a blocked move if every available direction is occupied.
+            # This preserves collision-based information sharing without trapping agents
+            # beside a stationary type 2 employee when other routes are open.
+            dx, dy = random.choice(blocked_moves)
         else:
             dx = dy = 0
 
@@ -305,25 +386,75 @@ class Agent:
 
         print("Agent {} moved to ({}, {})".format(self.id, self.pos_x, self.pos_y))
         
-        if world_obj.grid[self.pos_x][self.pos_y] == 1:
-            world_obj.fruit-=1
-            self.hunger = self.hunger_max
-            healed_diseases = self.heal_from_fruit()
-            if healed_diseases:
-                world_obj.disease_events.append({
-                    "turn": world_obj.turnNo + 1,
-                    "agent_id": self.id,
-                    "recovered_from": healed_diseases,
-                    "health": self.health,
-                })
-                print("Agent {} recovered from {} after collecting fruit.".format(
-                    self.id, ", ".join(healed_diseases)
-                ))
-            self.known_empty.add((self.pos_x, self.pos_y))
-            world_obj.pickup_events.append({
+        building_type = world_obj.grid[self.pos_x][self.pos_y]
+        building_location = (self.pos_x, self.pos_y)
+        if building_type and old_position != building_location:
+            world_obj.building_entries.append({
                 "turn": world_obj.turnNo + 1,
                 "agent_id": self.id,
-                "position": (self.pos_x, self.pos_y),
+                "building_type": building_type,
+                "position": building_location,
             })
-            print ("Agent {} picked up a fruit. {} fruit remain.".format(self.id, world_obj.fruit))
-            world_obj.grid[self.pos_x][self.pos_y] = 0
+            print("Agent {} entered type {} building at ({}, {}).".format(
+                self.id, building_type, self.pos_x, self.pos_y
+            ))
+            self.apply_for_job(world_obj, building_type, building_location)
+
+    def can_apply_for_type(self, building_type):
+        """Unemployed agents can apply anywhere; type 1 employees seek type 2."""
+        if self.job is None:
+            return True
+        return self.job == "Type 1 job" and building_type == 2
+
+    def apply_for_job(self, world_obj, building_type, building_location):
+        """Apply once per opening using intelligence, willpower and health."""
+        if not self.can_apply_for_type(building_type):
+            return False
+        opening_version = world_obj.job_opening_versions[building_location]
+        if self.applied_buildings.get(building_location) == opening_version:
+            return False
+        self.applied_buildings[building_location] = opening_version
+        if world_obj.building_jobs[building_location] is not None:
+            print("Agent {} found no open job at this building.".format(self.id))
+            return False
+
+        intelligence_score = max(0, min(100, (self.intelligence - 40) * 100 / 105))
+        health_range = health_max - health_min
+        health_score = (
+            (self.health - health_min) * 100 / health_range if health_range else 100
+        )
+        application_score = (
+            intelligence_score + self.willpower + self.mental_health + health_score
+        ) / 4
+        minimum_score = {1: 60, 2: 75}[building_type]
+        hired = application_score >= minimum_score
+        job_title = "Type {} job".format(building_type)
+        event = {
+            "turn": world_obj.turnNo + 1,
+            "agent_id": self.id,
+            "building_type": building_type,
+            "position": building_location,
+            "score": round(application_score, 1),
+            "minimum_score": minimum_score,
+            "hired": hired,
+            "job": job_title,
+        }
+        world_obj.job_application_events.append(event)
+        if hired:
+            previous_job = self.job
+            previous_location = self.employed_at
+            if previous_job is not None:
+                world_obj.reopen_job(previous_location, self)
+            world_obj.building_jobs[building_location] = self.id
+            self.job = job_title
+            self.employed_at = building_location
+            world_obj.hiring_events.append(event.copy())
+            print("Agent {} successfully got the {} at the type {} building!".format(
+                self.id, job_title, building_type
+            ))
+        else:
+            print("Agent {} was not hired for the {} (score: {}; required: {}); "
+                  "they will look for another eligible building.".format(
+                self.id, job_title, event["score"], minimum_score
+            ))
+        return hired

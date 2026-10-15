@@ -81,33 +81,52 @@ class Population:
         world_obj.turnNo +=1
 
     def print_stat_card(self, world_obj):
-        """Print the final collection and communication history."""
-        pickup_counts = {agent.id: 0 for agent in self.agents}
-        for event in world_obj.pickup_events:
-            pickup_counts[event["agent_id"]] += 1
-
+        """Print the final building, employment and communication history."""
         print("\n" + "=" * 58)
         print("POST-GAME STAT CARD")
         print("=" * 58)
         print("Turns completed: {}".format(world_obj.turnNo))
-        print("Fruit collected: {} / {}".format(
-            len(world_obj.pickup_events),
-            len(world_obj.pickup_events) + world_obj.fruit,
+        print("Buildings: {} ({} open jobs)".format(
+            world_obj.building_count, world_obj.open_jobs
         ))
 
-        print("\nFruit pickups (in order):")
-        if world_obj.pickup_events:
-            for order, event in enumerate(world_obj.pickup_events, start=1):
+        print("\nHiring history:")
+        if world_obj.hiring_events:
+            for event in world_obj.hiring_events:
                 x, y = event["position"]
-                print("  {}. Turn {}: Agent {} picked fruit at ({}, {})".format(
-                    order, event["turn"], event["agent_id"], x, y
+                print("  Turn {}: Agent {} got the {} in type {} building at ({}, {})".format(
+                    event["turn"], event["agent_id"], event["job"],
+                    event["building_type"], x, y
                 ))
         else:
-            print("  No fruit was collected.")
+            print("  No agents were hired.")
 
-        print("\nAgent totals:")
-        for agent_id, count in pickup_counts.items():
-            print("  Agent {}: {} fruit".format(agent_id, count))
+        rejections = [
+            event for event in world_obj.job_application_events
+            if not event["hired"]
+        ]
+        print("\nRejected job applications:")
+        if rejections:
+            for event in rejections:
+                x, y = event["position"]
+                print("  Turn {}: Agent {} was rejected from the {} at type {} building "
+                      "({}, {}) (score: {}; required: {}).".format(
+                    event["turn"], event["agent_id"], event["job"],
+                    event["building_type"], x, y,
+                    event["score"], event["minimum_score"]
+                ))
+        else:
+            print("  None")
+
+        print("\nJob upgrades and vacancies:")
+        if world_obj.job_quit_events:
+            for event in world_obj.job_quit_events:
+                x, y = event["position"]
+                print("  Turn {}: Agent {} left the {} at ({}, {})".format(
+                    event["turn"], event["agent_id"], event["job"], x, y
+                ))
+        else:
+            print("  None")
 
         print("\nAgent health:")
         for agent in self.agents:
@@ -124,6 +143,10 @@ class Population:
                 agent.id, agent.hunger, agent.hunger_max
             ))
 
+        print("\nAgent jobs:")
+        for agent in self.agents:
+            print("  Agent {}: {}".format(agent.id, agent.job or "unemployed"))
+
         print("\nCommunications:")
         if world_obj.communication_events:
             for event in world_obj.communication_events:
@@ -131,7 +154,7 @@ class Population:
                     "({}, {})".format(x, y)
                     for x, y in event["empty_locations"]
                 ) or "none known"
-                print("  Turn {}: Agent {} told Agent {} these fruit-free places: {}".format(
+                print("  Turn {}: Agent {} told Agent {} these building-free places: {}".format(
                     event["turn"], event["sender_id"], event["receiver_id"], locations
                 ))
         else:
@@ -139,35 +162,66 @@ class Population:
         print("=" * 58)
 
     def print_batch_report(self, world_obj, start_turn, end_turn):
-        """Print events produced during one batch of turns."""
-        pickups = [
-            event for event in world_obj.pickup_events
-            if start_turn <= event["turn"] <= end_turn
+        """Print building and job events produced during one batch."""
+        entries = [event for event in world_obj.building_entries
+                   if start_turn <= event["turn"] <= end_turn]
+        hires = [event for event in world_obj.hiring_events
+                 if start_turn <= event["turn"] <= end_turn]
+        rejections = [
+            event for event in world_obj.job_application_events
+            if not event["hired"]
+            and start_turn <= event["turn"] <= end_turn
         ]
+        quits = [event for event in world_obj.job_quit_events
+                 if start_turn <= event["turn"] <= end_turn]
         communications = [
             event for event in world_obj.communication_events
             if start_turn <= event["turn"] <= end_turn
         ]
-        pickup_counts = {agent.id: 0 for agent in self.agents}
-        for event in pickups:
-            pickup_counts[event["agent_id"]] += 1
-
         print("\n" + "-" * 58)
         print("BATCH REPORT: Turns {}-{}".format(start_turn, end_turn))
-        print("Fruit collected: {}".format(len(pickups)))
-        print("Pickups:")
-        if pickups:
-            for event in pickups:
+        print("Building entries:")
+        if entries:
+            for event in entries:
                 x, y = event["position"]
-                print("  Turn {}: Agent {} picked fruit at ({}, {})".format(
-                    event["turn"], event["agent_id"], x, y
+                print("  Turn {}: Agent {} entered type {} building at ({}, {})".format(
+                    event["turn"], event["agent_id"], event["building_type"], x, y
                 ))
         else:
             print("  None")
 
-        print("Agent totals for this batch:")
-        for agent_id, count in pickup_counts.items():
-            print("  Agent {}: {} fruit".format(agent_id, count))
+        print("Rejected job applications:")
+        if rejections:
+            for event in rejections:
+                x, y = event["position"]
+                print("  Turn {}: Agent {} was rejected from the {} at type {} building "
+                      "({}, {}) (score: {}; required: {}).".format(
+                    event["turn"], event["agent_id"], event["job"],
+                    event["building_type"], x, y,
+                    event["score"], event["minimum_score"]
+                ))
+        else:
+            print("  None")
+
+        print("Jobs reopened:")
+        if quits:
+            for event in quits:
+                x, y = event["position"]
+                print("  Turn {}: Agent {} left the {} at ({}, {})".format(
+                    event["turn"], event["agent_id"], event["job"], x, y
+                ))
+        else:
+            print("  None")
+
+        print("Agents hired:")
+        if hires:
+            for event in hires:
+                print("  Turn {}: Agent {} got the {} (score: {}; required: {})".format(
+                    event["turn"], event["agent_id"], event["job"],
+                    event["score"], event["minimum_score"]
+                ))
+        else:
+            print("  None")
 
         print("Communications:")
         if communications:
@@ -176,10 +230,10 @@ class Population:
                     "({}, {})".format(x, y)
                     for x, y in event["empty_locations"]
                 ) or "none known"
-                print("  Turn {}: Agent {} told Agent {} these fruit-free places: {}".format(
+                print("  Turn {}: Agent {} told Agent {} these building-free places: {}".format(
                     event["turn"], event["sender_id"], event["receiver_id"], locations
                 ))
         else:
             print("  None")
-        print("Fruit remaining: {}".format(world_obj.fruit))
+        print("Open jobs: {}".format(world_obj.open_jobs))
         print("-" * 58)
