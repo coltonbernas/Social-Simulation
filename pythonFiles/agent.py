@@ -37,7 +37,8 @@ class Agent:
             min(health_max, random.randint(starting_health_min, health_max) - max(0, self.age - 60)),
         )
         self.diseases = set()
-        self.willpower = None
+        #Gonna make this affect hard decisions
+        self.willpower = random.randint(0, 100)
         self.mental_health = None
         self.wealth = None
         self.political_status = None
