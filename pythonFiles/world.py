@@ -13,6 +13,8 @@ class World:
         self.building_count = buildings
         self.building_jobs = {}
         self.job_opening_versions = {}
+        self.school_occupants = {}
+        self.school_events = []
         self.building_entries = []
         self.job_application_events = []
         self.hiring_events = []
@@ -38,6 +40,12 @@ class World:
                 for agent in agents
             )
             for location, holder in self.building_jobs.items()
+        )
+
+    def has_school_activity(self, agents):
+        return any(
+            agent.schooling_at is not None or agent.can_seek_school(self)
+            for agent in agents
         )
 
     def reopen_job(self, location, former_holder, reason="left the job"):
@@ -67,8 +75,12 @@ class World:
             row = random.randint(0, self.rows - 1)
             col = random.randint(0, self.cols - 1)
             if self.grid[row][col] == 0:
-                building_type = 1 + (placed % 2)
+                building_type = 1 + (placed % 3)
                 self.grid[row][col] = building_type
-                self.building_jobs[(row, col)] = None
-                self.job_opening_versions[(row, col)] = 0
+                location = (row, col)
+                if building_type == 3:
+                    self.school_occupants[location] = set()
+                else:
+                    self.building_jobs[location] = None
+                    self.job_opening_versions[location] = 0
                 placed += 1

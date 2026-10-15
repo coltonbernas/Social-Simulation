@@ -117,6 +117,7 @@ class SimulationWindow:
 
     def _finished(self):
         return (not self.world.can_accept_application(self.population.agents)
+                and not self.world.has_school_activity(self.population.agents)
                 or self.world.turnNo >= 10000)
 
     def toggle_running(self):
@@ -170,6 +171,8 @@ class SimulationWindow:
         before_hires = len(self.world.hiring_events)
         before_quits = len(self.world.job_quit_events)
         before_deaths = len(self.world.death_events)
+        before_school = len(self.world.school_events)
+        before_diseases = len(self.world.disease_events)
         before_messages = len(self.world.communication_events)
         self.population.step_agents(self.world)
         print()
@@ -177,6 +180,8 @@ class SimulationWindow:
         hires = self.world.hiring_events[before_hires:]
         quits = self.world.job_quit_events[before_quits:]
         deaths = self.world.death_events[before_deaths:]
+        school_events = self.world.school_events[before_school:]
+        disease_events = self.world.disease_events[before_diseases:]
         messages = self.world.communication_events[before_messages:]
         for event in added:
             x, y = event["position"]
@@ -198,6 +203,25 @@ class SimulationWindow:
             self._append_log("Turn {}: Agent {} died from {} at age {}.".format(
                 event["turn"], event["agent_id"], event["cause"], event["age"]
             ))
+        for event in school_events:
+            if event["event"] == "enrolled":
+                self._append_log("Turn {}: Agent {} enrolled in school.".format(
+                    event["turn"], event["agent_id"]
+                ))
+            else:
+                self._append_log("Turn {}: Agent {} graduated; intelligence is now {}.".format(
+                    event["turn"], event["agent_id"], event["intelligence"]
+                ))
+        for event in disease_events:
+            if event.get("source") == "natural":
+                self._append_log("Turn {}: Agent {} contracted {} naturally.".format(
+                    event["turn"], event["agent_id"], event["disease"]
+                ))
+            else:
+                self._append_log("Turn {}: Agent {} caught {} from Agent {}.".format(
+                    event["turn"], event["agent_id"], event["disease"],
+                    event["source_id"]
+                ))
         for event in messages:
             self._append_log("Turn {}: Agent {} shared information with Agent {}.".format(event["turn"], event["sender_id"], event["receiver_id"]))
         self.draw()
@@ -254,7 +278,9 @@ class SimulationWindow:
         cell = min(width / cols, height / rows)
         left, top = (width - cell * cols) / 2, (height - cell * rows) / 2
         palette = ["#2563eb", "#db2777", "#7c3aed", "#0891b2", "#ea580c", "#16a34a", "#ca8a04"]
-        agents = {(agent.pos_x, agent.pos_y): agent.id for agent in self.population.agents}
+        agents = {}
+        for agent in self.population.agents:
+            agents.setdefault((agent.pos_x, agent.pos_y), []).append(agent.id)
         for row in range(rows):
             for col in range(cols):
                 x0, y0 = left + col * cell, top + row * cell
@@ -263,8 +289,12 @@ class SimulationWindow:
                 building_type = self.world.grid[row][col]
                 if building_type:
                     pad = cell * .18
-                    color = "#f5b82e" if building_type == 1 else "#10b981"
-                    outline = "#ca8a04" if building_type == 1 else "#047857"
+                    colors = {
+                        1: ("#f5b82e", "#ca8a04"),
+                        2: ("#10b981", "#047857"),
+                        3: ("#3b82f6", "#1d4ed8"),
+                    }
+                    color, outline = colors[building_type]
                     canvas.create_rectangle(
                         x0 + pad, y0 + pad, x1 - pad, y1 - pad,
                         fill=color, outline=outline, width=2
@@ -274,12 +304,16 @@ class SimulationWindow:
                         text=str(building_type), fill="white",
                         font=("Segoe UI", max(8, int(cell * .3)), "bold")
                     )
-                agent_id = agents.get((row, col))
-                if agent_id is not None:
+                agent_ids = agents.get((row, col))
+                if agent_ids:
                     pad = cell * .12
-                    color = palette[(agent_id - 1) % len(palette)]
+                    color = palette[(agent_ids[0] - 1) % len(palette)]
                     canvas.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, fill=color, outline="white", width=2)
-                    canvas.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=str(agent_id), fill="white", font=("Segoe UI", max(8, int(cell * .28)), "bold"))
+                    canvas.create_text(
+                        (x0 + x1) / 2, (y0 + y1) / 2,
+                        text=",".join(str(agent_id) for agent_id in agent_ids),
+                        fill="white", font=("Segoe UI", max(8, int(cell * .24)), "bold")
+                    )
         self.status.configure(text="Turn: {}\nOpen jobs: {} / {}\nAgents: {}".format(
             self.world.turnNo, self.world.open_jobs, building_count,
             len(self.population.agents)

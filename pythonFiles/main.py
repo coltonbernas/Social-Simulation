@@ -33,13 +33,15 @@ def main():
     print(f"World created with {world_obj.rows} rows and {world_obj .cols} columns, placed {len(pop.agents)} agents.")
 
     while (world_obj.turnNo < max_turns
-           and world_obj.can_accept_application(pop.agents)):
+           and (world_obj.can_accept_application(pop.agents)
+                or world_obj.has_school_activity(pop.agents))):
         batch_size = get_batch_size()
         batch_start = world_obj.turnNo + 1
         steps_this_batch = min(batch_size, max_turns - world_obj.turnNo)
 
         for _ in range(steps_this_batch):
-            if not world_obj.can_accept_application(pop.agents):
+            if (not world_obj.can_accept_application(pop.agents)
+                    and not world_obj.has_school_activity(pop.agents)):
                 break
             time.sleep(1)
             print("Turn {}:".format(world_obj.turnNo + 1))
@@ -50,7 +52,8 @@ def main():
 
     if world_obj.open_jobs == 0:
         print("All building jobs are filled; simulation done.")
-    elif not world_obj.can_accept_application(pop.agents):
+    elif (not world_obj.can_accept_application(pop.agents)
+          and not world_obj.has_school_activity(pop.agents)):
         print("No more agents can apply for the remaining jobs.")
     elif world_obj.turnNo == max_turns:
         print("Reached the {} turn limit.".format(max_turns))

@@ -9,6 +9,7 @@ except ImportError:
 class Population:
     def __init__(self, world_obj, count=agent_count):
         self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
+        self.all_agents = list(self.agents)
         self.next_agent_id = count
 
     def birth(self, world_obj):
@@ -20,6 +21,7 @@ class Population:
         )
         self.next_agent_id += 1
         self.agents.append(newborn)
+        self.all_agents.append(newborn)
         return newborn
 
     def share_information(self, first, second, world_obj):
@@ -76,7 +78,7 @@ class Population:
             if agent.age < agent.death_age:
                 agent.age += 1
             if agent.age >= agent.death_age:
-                self._remove_agent(agent, world_obj, "natural death at age {}".format(agent.age))
+                self._remove_agent(agent, world_obj, "old age")
 
         # Agents exchange information only when a move is blocked by another
         # agent occupying the destination cell.
@@ -92,15 +94,28 @@ class Population:
             agent.update_health(world_obj)
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
+            else:
+                agent.advance_school(world_obj)
         world_obj.turnNo +=1
 
     def _remove_agent(self, agent, world_obj, cause):
         """Remove a dead agent and reopen any job they held."""
+        if cause == "zero health":
+            cause = agent.last_health_damage_cause or "unknown cause"
         if agent.job is not None:
             world_obj.reopen_job(
                 agent.employed_at, agent, reason="died from {}".format(cause)
             )
-        world_obj.agent_grid[agent.pos_x][agent.pos_y] = 0
+        location = (agent.pos_x, agent.pos_y)
+        school_occupants = world_obj.school_occupants.get(location)
+        if school_occupants is not None:
+            school_occupants.discard(agent.id)
+            if world_obj.agent_grid[agent.pos_x][agent.pos_y] == agent.id:
+                world_obj.agent_grid[agent.pos_x][agent.pos_y] = (
+                    next(iter(school_occupants)) if school_occupants else 0
+                )
+        else:
+            world_obj.agent_grid[agent.pos_x][agent.pos_y] = 0
         world_obj.death_events.append({
             "turn": world_obj.turnNo + 1,
             "agent_id": agent.id,
@@ -119,6 +134,21 @@ class Population:
         print("Buildings: {} ({} open jobs)".format(
             world_obj.building_count, world_obj.open_jobs
         ))
+
+        deaths_by_agent = {
+            event["agent_id"]: event for event in world_obj.death_events
+        }
+        print("\nAgent outcomes:")
+        for agent in self.all_agents:
+            death = deaths_by_agent.get(agent.id)
+            if death:
+                print("  Agent {}: DIED at age {} (cause: {}); end intelligence: {}".format(
+                    agent.id, death["age"], death["cause"], agent.intelligence
+                ))
+            else:
+                print("  Agent {}: alive; end intelligence: {}".format(
+                    agent.id, agent.intelligence
+                ))
 
         print("\nHiring history:")
         if world_obj.hiring_events:
@@ -148,6 +178,36 @@ class Population:
         else:
             print("  None")
 
+        print("\nDisease history:")
+        if world_obj.disease_events:
+            for event in world_obj.disease_events:
+                if event.get("source") == "natural":
+                    print("  Turn {}: Agent {} contracted {} naturally".format(
+                        event["turn"], event["agent_id"], event["disease"]
+                    ))
+                else:
+                    print("  Turn {}: Agent {} caught {} passed by Agent {}".format(
+                        event["turn"], event["agent_id"], event["disease"],
+                        event["source_id"]
+                    ))
+        else:
+            print("  None")
+
+        print("\nSchool history:")
+        if world_obj.school_events:
+            for event in world_obj.school_events:
+                if event["event"] == "enrolled":
+                    x, y = event["position"]
+                    print("  Turn {}: Agent {} enrolled at ({}, {})".format(
+                        event["turn"], event["agent_id"], x, y
+                    ))
+                else:
+                    print("  Turn {}: Agent {} graduated; intelligence is now {}".format(
+                        event["turn"], event["agent_id"], event["intelligence"]
+                    ))
+        else:
+            print("  None")
+
         print("\nJob upgrades and vacancies:")
         if world_obj.job_quit_events:
             for event in world_obj.job_quit_events:
@@ -169,22 +229,22 @@ class Population:
             print("  None")
 
         print("\nAgent health:")
-        for agent in self.agents:
+        for agent in self.all_agents:
             diseases = ", ".join(sorted(agent.diseases)) or "none"
             print("  Agent {}: {}/100; diseases: {}".format(agent.id, agent.health, diseases))
 
         print("\nAgent mental health:")
-        for agent in self.agents:
+        for agent in self.all_agents:
             print("  Agent {}: {}/100".format(agent.id, agent.mental_health))
 
         print("\nAgent hunger:")
-        for agent in self.agents:
+        for agent in self.all_agents:
             print("  Agent {}: {}/{}".format(
                 agent.id, agent.hunger, agent.hunger_max
             ))
 
         print("\nAgent jobs:")
-        for agent in self.agents:
+        for agent in self.all_agents:
             print("  Agent {}: {}".format(agent.id, agent.job or "unemployed"))
 
         print("\nCommunications:")
@@ -214,6 +274,10 @@ class Population:
         ]
         quits = [event for event in world_obj.job_quit_events
                  if start_turn <= event["turn"] <= end_turn]
+        school_events = [event for event in world_obj.school_events
+                         if start_turn <= event["turn"] <= end_turn]
+        disease_events = [event for event in world_obj.disease_events
+                          if start_turn <= event["turn"] <= end_turn]
         communications = [
             event for event in world_obj.communication_events
             if start_turn <= event["turn"] <= end_turn
@@ -240,6 +304,36 @@ class Population:
                     event["building_type"], x, y,
                     event["score"], event["minimum_score"]
                 ))
+        else:
+            print("  None")
+
+        print("Disease events:")
+        if disease_events:
+            for event in disease_events:
+                if event.get("source") == "natural":
+                    print("  Turn {}: Agent {} contracted {} naturally".format(
+                        event["turn"], event["agent_id"], event["disease"]
+                    ))
+                else:
+                    print("  Turn {}: Agent {} caught {} passed by Agent {}".format(
+                        event["turn"], event["agent_id"], event["disease"],
+                        event["source_id"]
+                    ))
+        else:
+            print("  None")
+
+        print("School:")
+        if school_events:
+            for event in school_events:
+                if event["event"] == "enrolled":
+                    x, y = event["position"]
+                    print("  Turn {}: Agent {} enrolled at ({}, {})".format(
+                        event["turn"], event["agent_id"], x, y
+                    ))
+                else:
+                    print("  Turn {}: Agent {} graduated; intelligence is now {}".format(
+                        event["turn"], event["agent_id"], event["intelligence"]
+                    ))
         else:
             print("  None")
 

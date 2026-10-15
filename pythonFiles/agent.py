@@ -37,6 +37,7 @@ class Agent:
             health_min,
             min(health_max, random.randint(starting_health_min, health_max) - max(0, self.age - 60)),
         )
+        self.last_health_damage_cause = None
         self.diseases = set()
         #Gonna make this affect hard decisions and getting a job
         self.willpower = random.randint(0, 100)
@@ -59,6 +60,9 @@ class Agent:
         self.genes = []
         self.religion = None
         self.education = None
+        self.school_completed = False
+        self.schooling_at = None
+        self.school_turns = 0
         self.marital_status = None
         self.morality = None
         self.empathy = None
@@ -161,8 +165,15 @@ class Agent:
         if random.random() >= self.disease_transmission_probability({"contagiousness": contagiousness}):
             return False
         self.diseases.add(disease)
-        self.health = max(health_min, self.health - disease_health_impact)
+        self.damage_health(disease_health_impact, "disease: {}".format(disease))
         return True
+
+    def damage_health(self, amount, cause):
+        """Reduce health and remember what caused the latest reduction."""
+        previous_health = self.health
+        self.health = max(health_min, self.health - amount)
+        if self.health < previous_health:
+            self.last_health_damage_cause = cause
 
     def update_health(self, world_obj=None):
         """Apply health changes, including starvation and stressful events."""
@@ -170,7 +181,7 @@ class Agent:
         if not self.diseases and random.random() < disease_chance_per_turn:
             disease = "common_cold"
             self.diseases.add(disease)
-            self.health = max(health_min, self.health - disease_health_impact)
+            self.damage_health(disease_health_impact, "disease: {}".format(disease))
             if world_obj is not None:
                 world_obj.disease_events.append({
                     "turn": world_obj.turnNo + 1,
@@ -183,14 +194,54 @@ class Agent:
                 self.id, disease, self.health
             ))
         if self.diseases:
-            self.health = max(health_min, self.health - 1)
+            disease = sorted(self.diseases)[0]
+            self.damage_health(1, "disease: {}".format(disease))
         else:
+            previous_health = self.health
             self.health = min(health_max, self.health + 1)
+            if self.health > previous_health:
+                self.last_health_damage_cause = None
 
         if self.hunger <= 0:
-            self.health = max(health_min, self.health - 2)
+            self.damage_health(2, "hunger")
 
         self.update_stressful_events()
+
+    def advance_school(self, world_obj):
+        """Count attendance turns and award intelligence after five turns."""
+        if self.schooling_at is None or (self.pos_x, self.pos_y) != self.schooling_at:
+            return
+        self.school_turns += 1
+        if self.school_turns >= 5:
+            self.intelligence += 20
+            self.school_completed = True
+            self.schooling_at = None
+            self.applied_buildings.clear()
+            world_obj.school_events.append({
+                "turn": world_obj.turnNo + 1,
+                "agent_id": self.id,
+                "event": "graduated",
+                "intelligence": self.intelligence,
+            })
+            print("Agent {} completed school; intelligence increased by 20 to {}.".format(
+                self.id, self.intelligence
+            ))
+
+    def can_seek_school(self, world_obj):
+        if self.job is not None or self.school_completed or self.schooling_at is not None:
+            return False
+        available_jobs = [
+            location for location, holder in world_obj.building_jobs.items()
+            if holder is None
+            and self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
+            and self.applied_buildings.get(location)
+            != world_obj.job_opening_versions[location]
+        ]
+        school_nearby = any(
+            max(abs(location[0] - self.pos_x), abs(location[1] - self.pos_y)) <= 1
+            for location in world_obj.school_occupants
+        )
+        return school_nearby or not available_jobs
 
     def update_stressful_events(self):
         """Apply immediate and sustained mental-health costs from stressors."""
@@ -216,6 +267,11 @@ class Agent:
         if self.job == "Type 2 job":
             print("Agent {} is staying at their type 2 job.".format(self.id))
             return None
+        if self.schooling_at is not None:
+            print("Agent {} is attending school ({}/5 turns).".format(
+                self.id, self.school_turns
+            ))
+            return None
 
         visible_buildings = self.scan_surroundings(world_obj, rows, cols)
         job_targets = [
@@ -229,7 +285,20 @@ class Agent:
         self.known_empty.update(visible_empty)
         self.known_empty.difference_update(visible_buildings)
 
-        if job_targets:
+        school_target = None
+        if self.can_seek_school(world_obj):
+            school_target = min(
+                world_obj.school_occupants,
+                key=lambda location: (
+                    abs(location[0] - self.pos_x) + abs(location[1] - self.pos_y),
+                    location,
+                ),
+                default=None,
+            )
+
+        if school_target is not None:
+            target_x, target_y = school_target
+        elif job_targets:
             target_x, target_y = min(
                 job_targets,
                 key=lambda location: (
@@ -242,6 +311,10 @@ class Agent:
 
         # A previously rejected agent may already be standing in a building
         # when its job reopens, so it can apply again without walking out and back in.
+        if school_target == (self.pos_x, self.pos_y):
+            self.start_school(world_obj, school_target)
+            return None
+
         if (target_x, target_y) == (self.pos_x, self.pos_y):
             self.apply_for_job(
                 world_obj,
@@ -296,7 +369,8 @@ class Agent:
             destination = (next_x, next_y)
             if destination == (self.pos_x, self.pos_y):
                 continue
-            if world_obj.agent_grid[next_x][next_y] not in (0, self.id):
+            if (world_obj.agent_grid[next_x][next_y] not in (0, self.id)
+                    and world_obj.grid[next_x][next_y] != 3):
                 blocked_moves.append(move)
                 continue
             fallback_moves.append(move)
@@ -369,26 +443,39 @@ class Agent:
         next_x = max(0, min(rows-1, self.pos_x + dx))
         next_y = max(0, min(cols-1, self.pos_y + dy))
         other_agent_id = world_obj.agent_grid[next_x][next_y]
-        if other_agent_id not in (0, self.id):
+        if other_agent_id not in (0, self.id) and world_obj.grid[next_x][next_y] != 3:
             print("Agent {} bumped into Agent {} at ({}, {}).".format(
                 self.id, other_agent_id, next_x, next_y
             ))
             return other_agent_id
 
         old_position = (self.pos_x, self.pos_y)
-        world_obj.agent_grid[self.pos_x][self.pos_y] = 0
+        old_school_occupants = world_obj.school_occupants.get(old_position)
+        if old_school_occupants is not None:
+            old_school_occupants.discard(self.id)
+            if world_obj.agent_grid[self.pos_x][self.pos_y] == self.id:
+                world_obj.agent_grid[self.pos_x][self.pos_y] = (
+                    next(iter(old_school_occupants)) if old_school_occupants else 0
+                )
+        else:
+            world_obj.agent_grid[self.pos_x][self.pos_y] = 0
         self.pos_x, self.pos_y = next_x, next_y
         self.previous_position = old_position
         new_position = (self.pos_x, self.pos_y)
         self.visited_positions.add(new_position)
         self.position_visits[new_position] = self.position_visits.get(new_position, 0) + 1
 
-        world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
+        building_location = (self.pos_x, self.pos_y)
+        if world_obj.grid[self.pos_x][self.pos_y] == 3:
+            world_obj.school_occupants[building_location].add(self.id)
+            if world_obj.agent_grid[self.pos_x][self.pos_y] == 0:
+                world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
+        else:
+            world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
 
         print("Agent {} moved to ({}, {})".format(self.id, self.pos_x, self.pos_y))
         
         building_type = world_obj.grid[self.pos_x][self.pos_y]
-        building_location = (self.pos_x, self.pos_y)
         if building_type and old_position != building_location:
             world_obj.building_entries.append({
                 "turn": world_obj.turnNo + 1,
@@ -399,7 +486,28 @@ class Agent:
             print("Agent {} entered type {} building at ({}, {}).".format(
                 self.id, building_type, self.pos_x, self.pos_y
             ))
-            self.apply_for_job(world_obj, building_type, building_location)
+            if building_type in (1, 2):
+                self.apply_for_job(world_obj, building_type, building_location)
+            elif building_type == 3 and school_target == building_location:
+                self.start_school(world_obj, building_location)
+
+    def start_school(self, world_obj, location):
+        """Enroll the agent at a school; multiple agents may share its tile."""
+        if self.job is not None or self.school_completed or self.schooling_at is not None:
+            return False
+        self.schooling_at = location
+        self.school_turns = 0
+        world_obj.school_occupants[location].add(self.id)
+        world_obj.school_events.append({
+            "turn": world_obj.turnNo + 1,
+            "agent_id": self.id,
+            "event": "enrolled",
+            "position": location,
+        })
+        print("Agent {} enrolled in school at ({}, {}).".format(
+            self.id, location[0], location[1]
+        ))
+        return True
 
     def can_apply_for_type(self, building_type):
         """Unemployed agents can apply anywhere; type 1 employees seek type 2."""
