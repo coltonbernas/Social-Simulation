@@ -39,8 +39,11 @@ class Agent:
         self.diseases = set()
         #Gonna make this affect hard decisions
         self.willpower = random.randint(0, 100)
-        self.mental_health = None
+        self.mental_health = 100
         self.wealth = None
+        self.hunger_max = 100
+        self.hunger = self.hunger_max
+        self.active_stressful_events = set()
         self.political_status = None
         self.birth_place = None
         self.birth_date = None
@@ -153,7 +156,7 @@ class Agent:
         return True
 
     def update_health(self, world_obj=None):
-        """Apply health changes and check for naturally acquired disease."""
+        """Apply health changes, including starvation and stressful events."""
         if not self.diseases and random.random() < disease_chance_per_turn:
             disease = "common_cold"
             self.diseases.add(disease)
@@ -173,6 +176,31 @@ class Agent:
             self.health = max(health_min, self.health - 1)
         else:
             self.health = min(health_max, self.health + 1)
+
+        if self.hunger <= 0:
+            self.health = max(health_min, self.health - 2)
+
+        self.update_stressful_events()
+
+    def update_stressful_events(self):
+        """Apply immediate and sustained mental-health costs from stressors."""
+        current_events = set()
+        if isinstance(self.wealth, (int, float)):
+            if self.wealth <= 0:
+                current_events.add("no_wealth")
+            elif self.wealth <= 10:
+                current_events.add("low_wealth")
+        if self.hunger <= 0:
+            current_events.add("hunger")
+
+        for event in current_events:
+            if event not in self.active_stressful_events:
+                # A new stressful event has an immediate impact.
+                self.mental_health = max(0, self.mental_health - 5)
+            else:
+                # The impact continues on every turn the event remains active.
+                self.mental_health = max(0, self.mental_health - 2)
+        self.active_stressful_events = current_events
 
     def heal_from_fruit(self):
         """Clear all diseases when the agent collects a fruit; return them."""
@@ -262,6 +290,9 @@ class Agent:
             ))
             return other_agent_id
 
+        # Hunger falls only when the agent successfully moves.
+        self.hunger = max(0, self.hunger - 1)
+
         old_position = (self.pos_x, self.pos_y)
         world_obj.agent_grid[self.pos_x][self.pos_y] = 0
         self.pos_x, self.pos_y = next_x, next_y
@@ -276,6 +307,7 @@ class Agent:
         
         if world_obj.grid[self.pos_x][self.pos_y] == 1:
             world_obj.fruit-=1
+            self.hunger = self.hunger_max
             healed_diseases = self.heal_from_fruit()
             if healed_diseases:
                 world_obj.disease_events.append({

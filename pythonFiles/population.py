@@ -114,6 +114,16 @@ class Population:
             diseases = ", ".join(sorted(agent.diseases)) or "none"
             print("  Agent {}: {}/100; diseases: {}".format(agent.id, agent.health, diseases))
 
+        print("\nAgent mental health:")
+        for agent in self.agents:
+            print("  Agent {}: {}/100".format(agent.id, agent.mental_health))
+
+        print("\nAgent hunger:")
+        for agent in self.agents:
+            print("  Agent {}: {}/{}".format(
+                agent.id, agent.hunger, agent.hunger_max
+            ))
+
         print("\nCommunications:")
         if world_obj.communication_events:
             for event in world_obj.communication_events:
