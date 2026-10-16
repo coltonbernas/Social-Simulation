@@ -18,6 +18,8 @@ class World:
         self.grocery_occupants = {}
         self.hospitals = set()
         self.hospital_occupants = {}
+        self.houses = {}
+        self.house_events = []
         self.hospital_events = []
         self.grocery_events = []
         self.school_events = []
@@ -85,7 +87,7 @@ class World:
             row = random.randint(0, self.rows - 1)
             col = random.randint(0, self.cols - 1)
             if self.grid[row][col] == 0:
-                building_type = 1 + (placed % 5)
+                building_type = 1 + (placed % 7)
                 self.grid[row][col] = building_type
                 location = (row, col)
                 if building_type == 3:
@@ -96,6 +98,8 @@ class World:
                 elif building_type == 5:
                     self.hospitals.add(location)
                     self.hospital_occupants[location] = set()
+                elif building_type in (6, 7):
+                    self.houses[location] = set()
                 else:
                     self.building_jobs[location] = None
                     self.job_opening_versions[location] = 0

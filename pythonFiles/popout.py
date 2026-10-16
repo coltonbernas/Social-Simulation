@@ -191,6 +191,7 @@ class SimulationWindow:
         before_diseases = len(self.world.disease_events)
         before_messages = len(self.world.communication_events)
         before_transfers = len(self.world.money_transfer_events)
+        before_houses = len(self.world.house_events)
         self.population.step_agents(self.world)
         print()
         added = self.world.building_entries[before_entries:]
@@ -202,6 +203,7 @@ class SimulationWindow:
         disease_events = self.world.disease_events[before_diseases:]
         messages = self.world.communication_events[before_messages:]
         transfers = self.world.money_transfer_events[before_transfers:]
+        houses = self.world.house_events[before_houses:]
         for event in added:
             x, y = event["position"]
             self._append_log("Turn {}: Agent {} entered type {} building at ({}, {}).".format(
@@ -254,6 +256,18 @@ class SimulationWindow:
                 event["turn"], event["from_name"], event["amount"],
                 event["to_name"], event["reason"]
             ))
+        for event in houses:
+            if event["event"] == "evicted":
+                self._append_log("Turn {}: Agent {} was evicted from type {} house; lost 25 mental health (now {}/100).".format(
+                    event["turn"], event["agent_id"], event["house_type"],
+                    event["mental_health"]
+                ))
+            else:
+                action = "bought" if event["event"] == "bought" else "paid rent for"
+                self._append_log("Turn {}: Agent {} {} type {} house for ${:,}.".format(
+                    event["turn"], event["agent_id"], action,
+                    event["house_type"], event["amount"]
+                ))
         self.draw()
         if self.batch_remaining:
             self.batch_remaining -= 1
@@ -361,6 +375,8 @@ class SimulationWindow:
                         3: ("#3b82f6", "#1d4ed8"),
                         4: ("#ef4444", "#b91c1c"),
                         5: ("#8b5cf6", "#6d28d9"),
+                        6: ("#a16207", "#713f12"),
+                        7: ("#92400e", "#451a03"),
                     }
                     color, outline = colors[building_type]
                     canvas.create_rectangle(

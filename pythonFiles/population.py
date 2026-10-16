@@ -196,6 +196,7 @@ class Population:
             else:
                 agent.advance_hospital_stay(world_obj)
                 agent.advance_school(world_obj)
+                agent.advance_house_stay(world_obj)
         world_obj.turnNo +=1
 
     def _remove_agent(self, agent, world_obj, cause):
@@ -216,6 +217,8 @@ class Population:
             shared_occupants = world_obj.grocery_occupants.get(location)
         if shared_occupants is None:
             shared_occupants = world_obj.hospital_occupants.get(location)
+        if shared_occupants is None:
+            shared_occupants = world_obj.houses.get(location)
         if shared_occupants is not None:
             shared_occupants.discard(agent.id)
             if world_obj.agent_grid[agent.pos_x][agent.pos_y] == agent.id:
@@ -283,6 +286,24 @@ class Population:
                     event["building_type"], x, y,
                     event["score"], event["minimum_score"]
                 ))
+        else:
+            print("  None")
+
+        print("\nHouse history:")
+        if world_obj.house_events:
+            for event in world_obj.house_events:
+                x, y = event["position"]
+                if event["event"] == "evicted":
+                    print("  Turn {}: Agent {} was evicted from type {} house at ({}, {}); mental health is now {}/100".format(
+                        event["turn"], event["agent_id"], event["house_type"], x, y,
+                        event["mental_health"]
+                    ))
+                else:
+                    action = "bought" if event["event"] == "bought" else "paid rent for"
+                    print("  Turn {}: Agent {} {} type {} house at ({}, {}) for ${:,}; wealth is now ${:,}".format(
+                        event["turn"], event["agent_id"], action,
+                        event["house_type"], x, y, event["amount"], event["wealth"]
+                    ))
         else:
             print("  None")
 
@@ -446,6 +467,8 @@ class Population:
             event for event in world_obj.money_transfer_events
             if start_turn <= event["turn"] <= end_turn
         ]
+        house_events = [event for event in world_obj.house_events
+                        if start_turn <= event["turn"] <= end_turn]
         print("\n" + "-" * 58)
         print("BATCH REPORT: Turns {}-{}".format(start_turn, end_turn))
         print("Building entries:")
@@ -455,6 +478,24 @@ class Population:
                 print("  Turn {}: Agent {} entered type {} building at ({}, {})".format(
                     event["turn"], event["agent_id"], event["building_type"], x, y
                 ))
+        else:
+            print("  None")
+
+        print("House events:")
+        if house_events:
+            for event in house_events:
+                x, y = event["position"]
+                if event["event"] == "evicted":
+                    print("  Turn {}: Agent {} evicted from type {} house at ({}, {}); mental health {}/100".format(
+                        event["turn"], event["agent_id"], event["house_type"], x, y,
+                        event["mental_health"]
+                    ))
+                else:
+                    action = "bought" if event["event"] == "bought" else "paid rent for"
+                    print("  Turn {}: Agent {} {} type {} house for ${:,}; wealth ${:,}".format(
+                        event["turn"], event["agent_id"], action,
+                        event["house_type"], event["amount"], event["wealth"]
+                    ))
         else:
             print("  None")
 

@@ -55,6 +55,8 @@ class Agent:
         self.willpower = random.randint(0, 100)
         self.mental_health = 100
         self.wealth = starting_wealth
+        self.house = None
+        self.house_turns_since_payment = 0
         self.low_wealth_turns = 0
         self.job = None
         self.employed_at = None
@@ -223,7 +225,7 @@ class Agent:
                 self.last_health_damage_cause = None
 
         if self.hunger <= 0:
-            self.damage_health(5, "hunger")
+            self.damage_health(10, "hunger")
 
         self.update_stressful_events()
 
@@ -301,6 +303,63 @@ class Agent:
 
     def can_buy_food(self):
         return self.wealth >= grocery_food_cost and self.hunger < grocery_hunger_threshold
+
+    def buy_house(self, world_obj, location):
+        """Purchase an available house by paying its four-turn rent upfront."""
+        house_type = world_obj.grid[location[0]][location[1]]
+        if self.house is not None or house_type not in (6, 7):
+            return False
+        cost = 300 if house_type == 6 else 700
+        if self.wealth < cost:
+            return False
+        self.wealth -= cost
+        self.house = location
+        self.house_turns_since_payment = 0
+        world_obj.houses[location].add(self.id)
+        event = {"turn": world_obj.turnNo + 1, "agent_id": self.id,
+                 "event": "bought", "house_type": house_type,
+                 "position": location, "amount": cost, "wealth": self.wealth}
+        world_obj.house_events.append(event)
+        print("Agent {} bought a type {} house for ${:,} (wealth: ${:,}).".format(
+            self.id, house_type, cost, self.wealth
+        ))
+        return True
+
+    def advance_house_stay(self, world_obj):
+        """Restore mood while housed and collect rent every four turns."""
+        if self.house is None:
+            return
+        house_type = world_obj.grid[self.house[0]][self.house[1]]
+        if (self.pos_x, self.pos_y) == self.house:
+            self.mental_health = min(100, self.mental_health + (5 if house_type == 6 else 15))
+        self.house_turns_since_payment += 1
+        if self.house_turns_since_payment < 4:
+            return
+        cost = 300 if house_type == 6 else 700
+        if self.wealth >= cost:
+            self.wealth -= cost
+            self.house_turns_since_payment = 0
+            event = {"turn": world_obj.turnNo + 1, "agent_id": self.id,
+                     "event": "paid", "house_type": house_type,
+                     "position": self.house, "amount": cost, "wealth": self.wealth}
+            world_obj.house_events.append(event)
+            print("Agent {} paid ${:,} for type {} house rent (wealth: ${:,}).".format(
+                self.id, cost, house_type, self.wealth
+            ))
+        else:
+            location = self.house
+            world_obj.houses[location].discard(self.id)
+            self.house = None
+            self.house_turns_since_payment = 0
+            self.mental_health = max(0, self.mental_health - 25)
+            event = {"turn": world_obj.turnNo + 1, "agent_id": self.id,
+                     "event": "evicted", "house_type": house_type,
+                     "position": location, "amount": cost, "wealth": self.wealth,
+                     "mental_health": self.mental_health}
+            world_obj.house_events.append(event)
+            print("Agent {} was evicted from type {} house; lost 25 mental health (now {}).".format(
+                self.id, house_type, self.mental_health
+            ))
 
     def buy_food(self, world_obj, location):
         """Buy food at a grocery store and restore hunger, health, and mood."""
@@ -383,6 +442,11 @@ class Agent:
             ))
             return None
 
+        # A resident stays home unless a health or food need sends them out.
+        if (self.house is not None and (self.pos_x, self.pos_y) == self.house
+                and not self.diseases and not self.can_buy_food()):
+            return None
+
         visible_buildings = self.scan_surroundings(world_obj, rows, cols)
         job_targets = [
             location for location, job_holder in world_obj.building_jobs.items()
@@ -432,6 +496,21 @@ class Agent:
                 default=None,
             )
 
+        house_target = None
+        if self.house is not None:
+            house_target = self.house
+        elif not self.diseases:
+            affordable_houses = [
+                location for location in world_obj.houses
+                if self.wealth >= (300 if world_obj.grid[location[0]][location[1]] == 6 else 700)
+            ]
+            house_target = min(
+                affordable_houses,
+                key=lambda location: (
+                    abs(location[0] - self.pos_x) + abs(location[1] - self.pos_y), location
+                ), default=None,
+            )
+
         if hospital_target is not None:
             target_x, target_y = hospital_target
         elif grocery_target is not None:
@@ -448,6 +527,8 @@ class Agent:
                     location,
                 ),
             )
+        elif house_target is not None:
+            target_x, target_y = house_target
         else:
             target_x = target_y = None
 
@@ -458,6 +539,11 @@ class Agent:
             return None
 
         if (target_x, target_y) == (self.pos_x, self.pos_y):
+            if (self.house is None
+                    and world_obj.grid[self.pos_x][self.pos_y] in (6, 7)):
+                self.buy_house(world_obj, (self.pos_x, self.pos_y))
+                if self.house is not None:
+                    return None
             self.apply_for_job(
                 world_obj,
                 world_obj.grid[self.pos_x][self.pos_y],
@@ -514,7 +600,7 @@ class Agent:
             if world_obj.grid[next_x][next_y] == 5 and not self.diseases:
                 continue
             if (world_obj.agent_grid[next_x][next_y] not in (0, self.id)
-                    and world_obj.grid[next_x][next_y] not in (3, 4, 5)):
+                    and world_obj.grid[next_x][next_y] not in (3, 4, 5, 6, 7)):
                 blocked_moves.append(move)
                 continue
             fallback_moves.append(move)
@@ -588,7 +674,7 @@ class Agent:
         next_y = max(0, min(cols-1, self.pos_y + dy))
         other_agent_id = world_obj.agent_grid[next_x][next_y]
         if (other_agent_id not in (0, self.id)
-                and world_obj.grid[next_x][next_y] not in (3, 4, 5)):
+                and world_obj.grid[next_x][next_y] not in (3, 4, 5, 6, 7)):
             print("Agent {} bumped into Agent {} at ({}, {}).".format(
                 self.id, other_agent_id, next_x, next_y
             ))
@@ -600,6 +686,8 @@ class Agent:
             old_shared_occupants = world_obj.grocery_occupants.get(old_position)
         if old_shared_occupants is None:
             old_shared_occupants = world_obj.hospital_occupants.get(old_position)
+        if old_shared_occupants is None:
+            old_shared_occupants = world_obj.houses.get(old_position)
         if old_shared_occupants is not None:
             old_shared_occupants.discard(self.id)
             if world_obj.agent_grid[self.pos_x][self.pos_y] == self.id:
@@ -621,12 +709,14 @@ class Agent:
         self.position_visits[new_position] = self.position_visits.get(new_position, 0) + 1
 
         building_location = (self.pos_x, self.pos_y)
-        if world_obj.grid[self.pos_x][self.pos_y] in (3, 4, 5):
+        if world_obj.grid[self.pos_x][self.pos_y] in (3, 4, 5, 6, 7):
             occupants = world_obj.school_occupants.get(building_location)
             if occupants is None:
                 occupants = world_obj.grocery_occupants.get(building_location)
             if occupants is None:
                 occupants = world_obj.hospital_occupants.get(building_location)
+            if occupants is None:
+                occupants = world_obj.houses.get(building_location)
             occupants.add(self.id)
             if world_obj.agent_grid[self.pos_x][self.pos_y] == 0:
                 world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
@@ -670,6 +760,10 @@ class Agent:
                 print("Agent {} entered the hospital with {}; treatment takes one turn.".format(
                     self.id, ", ".join(sorted(self.diseases))
                 ))
+            elif building_type in (6, 7):
+                if self.house == building_location:
+                    return None
+                self.buy_house(world_obj, building_location)
 
     def start_school(self, world_obj, location):
         """Enroll the agent at a school; multiple agents may share its tile."""
