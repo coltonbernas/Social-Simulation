@@ -7,11 +7,11 @@ from tkinter import filedialog, messagebox, ttk
 try:  # Support both ``python pythonFiles/main.py`` and ``python -m pythonFiles.main``.
     from .world import World
     from .population import Population
-    from .config import building_count
+    from .config import building_names
 except ImportError:
     from world import World
     from population import Population
-    from config import building_count
+    from config import building_names
 
 
 class SimulationWindow:
@@ -206,8 +206,8 @@ class SimulationWindow:
         houses = self.world.house_events[before_houses:]
         for event in added:
             x, y = event["position"]
-            self._append_log("Turn {}: Agent {} entered type {} building at ({}, {}).".format(
-                event["turn"], event["agent_id"], event["building_type"], x, y
+            self._append_log("Turn {}: Agent {} entered the {} at ({}, {}).".format(
+                event["turn"], event["agent_id"], building_names[event["building_type"]], x, y
             ))
         for event in hires:
             self._append_log("Turn {}: Agent {} got the {} (score: {}; required: {}).".format(
@@ -258,15 +258,15 @@ class SimulationWindow:
             ))
         for event in houses:
             if event["event"] == "evicted":
-                self._append_log("Turn {}: Agent {} was evicted from type {} house; lost 25 mental health (now {}/100).".format(
-                    event["turn"], event["agent_id"], event["house_type"],
+                self._append_log("Turn {}: Agent {} was evicted from the {}; lost 25 mental health (now {}/100).".format(
+                    event["turn"], event["agent_id"], building_names[event["house_type"]],
                     event["mental_health"]
                 ))
             else:
                 action = "bought" if event["event"] == "bought" else "paid rent for"
-                self._append_log("Turn {}: Agent {} {} type {} house for ${:,}.".format(
+                self._append_log("Turn {}: Agent {} {} the {} for ${:,}.".format(
                     event["turn"], event["agent_id"], action,
-                    event["house_type"], event["amount"]
+                    building_names[event["house_type"]], event["amount"]
                 ))
         self.draw()
         if self.batch_remaining:
@@ -305,6 +305,88 @@ class SimulationWindow:
             "{}: ${:,}".format(agent.id, agent.wealth)
             for agent in self.population.all_agents
         ))
+
+    def _append_wealth_gini_graph(self):
+        gini = self.population.wealth_gini_coefficient()
+        if gini is None:
+            self._append_log("Wealth Gini coefficient: no agent wealth data available.")
+        else:
+            self._append_log("Wealth Gini coefficient: {:.3f}.".format(gini))
+
+    def _draw_wealth_gini_graph(self):
+        """Render the final wealth Lorenz curve on the main popout canvas."""
+        canvas = self.canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 100)
+        height = max(canvas.winfo_height(), 100)
+        wealth_values = sorted(max(0, agent.wealth) for agent in self.population.all_agents)
+        gini = self.population.wealth_gini_coefficient()
+        canvas.create_text(
+            width / 2, 24, text="Final Wealth Inequality",
+            font=("Segoe UI", 16, "bold"), fill="#172033"
+        )
+        if not wealth_values:
+            canvas.create_text(
+                width / 2, height / 2, text="No agent wealth data available.",
+                font=("Segoe UI", 11), fill="#475569"
+            )
+            return
+
+        canvas.create_text(
+            width / 2, 48,
+            text="Lorenz curve    Gini coefficient: {:.3f}".format(gini),
+            font=("Segoe UI", 11), fill="#334155"
+        )
+        left, right = 76, width - 36
+        top, bottom = 88, height - 72
+        plot_width, plot_height = right - left, bottom - top
+        for tick in range(6):
+            share = tick / 5
+            x = left + share * plot_width
+            y = bottom - share * plot_height
+            canvas.create_line(x, top, x, bottom, fill="#e2e8f0")
+            canvas.create_line(left, y, right, y, fill="#e2e8f0")
+            canvas.create_text(left - 10, y, text="{}%".format(tick * 20),
+                               anchor="e", font=("Segoe UI", 9), fill="#64748b")
+            canvas.create_text(x, bottom + 16, text="{}%".format(tick * 20),
+                               font=("Segoe UI", 9), fill="#64748b")
+
+        canvas.create_line(left, bottom, right, top, fill="#94a3b8",
+                           width=2, dash=(5, 4))
+        count = len(wealth_values)
+        total_wealth = sum(wealth_values)
+        cumulative_wealth = 0
+        curve_points = [left, bottom]
+        for index, wealth in enumerate(wealth_values, start=1):
+            cumulative_wealth += wealth
+            population_share = index / count
+            wealth_share = (
+                cumulative_wealth / total_wealth if total_wealth
+                else population_share
+            )
+            curve_points.extend((
+                left + population_share * plot_width,
+                bottom - wealth_share * plot_height,
+            ))
+        canvas.create_line(*curve_points, fill="#2563eb", width=3,
+                           smooth=True, splinesteps=24)
+        for point_index in range(0, len(curve_points), 2):
+            x, y = curve_points[point_index], curve_points[point_index + 1]
+            canvas.create_oval(x - 3, y - 3, x + 3, y + 3,
+                               fill="#1d4ed8", outline="white")
+        canvas.create_text(width / 2, height - 24,
+                           text="Cumulative share of agents (%)",
+                           font=("Segoe UI", 10), fill="#334155")
+        canvas.create_text(18, height / 2, text="Cumulative wealth (%)",
+                           angle=90, font=("Segoe UI", 10), fill="#334155")
+        canvas.create_line(width - 230, 68, width - 210, 68,
+                           fill="#94a3b8", width=2, dash=(5, 4))
+        canvas.create_text(width - 204, 68, text="Equal wealth",
+                           anchor="w", font=("Segoe UI", 9), fill="#475569")
+        canvas.create_line(width - 120, 68, width - 100, 68,
+                           fill="#2563eb", width=3)
+        canvas.create_text(width - 94, 68, text="Actual wealth",
+                           anchor="w", font=("Segoe UI", 9), fill="#475569")
 
     def _append_social_history(self):
         self._append_log("Interaction history:")
@@ -345,8 +427,10 @@ class SimulationWindow:
             self._append_log(message)
         self.population.print_stat_card(self.world)
         self._append_agent_wealth()
+        self._append_wealth_gini_graph()
         self._append_social_history()
         self._append_log("Simulation finished.")
+        self._draw_wealth_gini_graph()
 
     def draw(self):
         if self.world is None:
@@ -385,7 +469,7 @@ class SimulationWindow:
                     )
                     canvas.create_text(
                         (x0 + x1) / 2, (y0 + y1) / 2,
-                        text=str(building_type), fill="white",
+                        text={1: "W1", 2: "W2", 3: "SCH", 4: "GRO", 5: "HOS", 6: "H1", 7: "H2"}[building_type], fill="white",
                         font=("Segoe UI", max(8, int(cell * .3)), "bold")
                     )
                 agent_ids = agents.get((row, col))
@@ -398,8 +482,9 @@ class SimulationWindow:
                         text=",".join(str(agent_id) for agent_id in agent_ids),
                         fill="white", font=("Segoe UI", max(8, int(cell * .24)), "bold")
                     )
-        self.status.configure(text="Turn: {}\nOpen jobs: {} / {}\nAgents: {}".format(
-            self.world.turnNo, self.world.open_jobs, building_count,
+        self.status.configure(text="Turn: {}\nOpen jobs: {} / {}\nBuildings: {}\nAgents: {}\nW1 Workplace 1 | W2 Workplace 2 | SCH School | GRO Grocery\nHOS Hospital | H1 Budget House | H2 Premium House".format(
+            self.world.turnNo, self.world.open_jobs, len(self.world.building_jobs),
+            self.world.building_count,
             len(self.population.agents)
         ))
 

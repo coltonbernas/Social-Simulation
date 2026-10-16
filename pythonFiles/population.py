@@ -1,9 +1,9 @@
 try:
     from .agent import Agent
-    from .config import agent_count
+    from .config import agent_count, building_names
 except ImportError:
     from agent import Agent
-    from config import agent_count
+    from config import agent_count, building_names
 
 
 class Population:
@@ -265,9 +265,9 @@ class Population:
         if world_obj.hiring_events:
             for event in world_obj.hiring_events:
                 x, y = event["position"]
-                print("  Turn {}: Agent {} got the {} in type {} building at ({}, {})".format(
+                print("  Turn {}: Agent {} got the {} at the {} ({}, {})".format(
                     event["turn"], event["agent_id"], event["job"],
-                    event["building_type"], x, y
+                    building_names[event["building_type"]], x, y
                 ))
         else:
             print("  No agents were hired.")
@@ -280,10 +280,10 @@ class Population:
         if rejections:
             for event in rejections:
                 x, y = event["position"]
-                print("  Turn {}: Agent {} was rejected from the {} at type {} building "
+                print("  Turn {}: Agent {} was rejected from the {} at the {} "
                       "({}, {}) (score: {}; required: {}).".format(
                     event["turn"], event["agent_id"], event["job"],
-                    event["building_type"], x, y,
+                    building_names[event["building_type"]], x, y,
                     event["score"], event["minimum_score"]
                 ))
         else:
@@ -294,15 +294,15 @@ class Population:
             for event in world_obj.house_events:
                 x, y = event["position"]
                 if event["event"] == "evicted":
-                    print("  Turn {}: Agent {} was evicted from type {} house at ({}, {}); mental health is now {}/100".format(
-                        event["turn"], event["agent_id"], event["house_type"], x, y,
+                    print("  Turn {}: Agent {} was evicted from the {} at ({}, {}); mental health is now {}/100".format(
+                        event["turn"], event["agent_id"], building_names[event["house_type"]], x, y,
                         event["mental_health"]
                     ))
                 else:
                     action = "bought" if event["event"] == "bought" else "paid rent for"
-                    print("  Turn {}: Agent {} {} type {} house at ({}, {}) for ${:,}; wealth is now ${:,}".format(
+                    print("  Turn {}: Agent {} {} the {} at ({}, {}) for ${:,}; wealth is now ${:,}".format(
                         event["turn"], event["agent_id"], action,
-                        event["house_type"], x, y, event["amount"], event["wealth"]
+                        building_names[event["house_type"]], x, y, event["amount"], event["wealth"]
                     ))
         else:
             print("  None")
@@ -407,6 +407,8 @@ class Population:
         for agent in self.all_agents:
             print("  Agent {}: ${}".format(agent.id, agent.wealth))
 
+        self.print_wealth_gini_graph()
+
         print("\nAgent jobs:")
         for agent in self.all_agents:
             print("  Agent {}: {}".format(agent.id, agent.job or "unemployed"))
@@ -439,6 +441,70 @@ class Population:
             names = ", ".join(agent.interacted_agents) or "none"
             print("  {}: {}".format(agent.name, names))
         print("=" * 58)
+
+    def print_wealth_gini_graph(self):
+        """Print an ASCII Lorenz curve and Gini coefficient for final wealth."""
+        for line in self.wealth_gini_graph_lines():
+            print(line)
+
+    def wealth_gini_graph_lines(self):
+        """Return the final wealth Lorenz graph as lines for console or GUI output."""
+        wealth_values = sorted(max(0, agent.wealth) for agent in self.all_agents)
+        lines = ["", "Wealth inequality (Lorenz curve; all simulation agents):"]
+        if not wealth_values:
+            lines.append("  No agent wealth data available.")
+            return lines
+
+        count = len(wealth_values)
+        total_wealth = sum(wealth_values)
+        gini = self.wealth_gini_coefficient()
+
+        width, height = 30, 10
+        cumulative = [0]
+        for wealth in wealth_values:
+            cumulative.append(cumulative[-1] + wealth)
+
+        graph = []
+        for row in range(height + 1):
+            graph.append([" "] * (width + 1))
+
+        for column in range(width + 1):
+            population_share = column / width
+            agent_position = population_share * count
+            lower_index = min(int(agent_position), count)
+            fraction = agent_position - lower_index
+            partial_wealth = cumulative[lower_index]
+            if lower_index < count:
+                partial_wealth += fraction * wealth_values[lower_index]
+            wealth_share = partial_wealth / total_wealth if total_wealth else population_share
+            lorenz_row = round((1 - wealth_share) * height)
+            equality_row = round((1 - population_share) * height)
+            graph[equality_row][column] = "."
+            graph[lorenz_row][column] = "+" if lorenz_row == equality_row else "*"
+
+        for row, cells in enumerate(graph):
+            percentage = 100 - row * 10
+            lines.append("  {:>3}% |{}".format(percentage, "".join(cells)))
+        lines.append("      +{}".format("-" * (width + 1)))
+        lines.append("       0%{}100% (cumulative population)".format(" " * (width - 5)))
+        lines.append("  . Equality line   * Wealth distribution   + Overlap")
+        lines.append("  Gini coefficient: {:.3f} (0 = equal wealth, 1 = maximum inequality)".format(gini))
+        return lines
+
+    def wealth_gini_coefficient(self):
+        """Calculate the wealth Gini coefficient for all simulation agents."""
+        wealth_values = sorted(max(0, agent.wealth) for agent in self.all_agents)
+        if not wealth_values:
+            return None
+        total_wealth = sum(wealth_values)
+        if total_wealth == 0:
+            return 0.0
+        count = len(wealth_values)
+        weighted_sum = sum(
+            (2 * index - count - 1) * wealth
+            for index, wealth in enumerate(wealth_values, start=1)
+        )
+        return weighted_sum / (count * total_wealth)
 
     def print_batch_report(self, world_obj, start_turn, end_turn):
         """Print building and job events produced during one batch."""
@@ -475,8 +541,8 @@ class Population:
         if entries:
             for event in entries:
                 x, y = event["position"]
-                print("  Turn {}: Agent {} entered type {} building at ({}, {})".format(
-                    event["turn"], event["agent_id"], event["building_type"], x, y
+                print("  Turn {}: Agent {} entered the {} at ({}, {})".format(
+                    event["turn"], event["agent_id"], building_names[event["building_type"]], x, y
                 ))
         else:
             print("  None")
@@ -486,15 +552,15 @@ class Population:
             for event in house_events:
                 x, y = event["position"]
                 if event["event"] == "evicted":
-                    print("  Turn {}: Agent {} evicted from type {} house at ({}, {}); mental health {}/100".format(
-                        event["turn"], event["agent_id"], event["house_type"], x, y,
+                    print("  Turn {}: Agent {} evicted from the {} at ({}, {}); mental health {}/100".format(
+                        event["turn"], event["agent_id"], building_names[event["house_type"]], x, y,
                         event["mental_health"]
                     ))
                 else:
                     action = "bought" if event["event"] == "bought" else "paid rent for"
-                    print("  Turn {}: Agent {} {} type {} house for ${:,}; wealth ${:,}".format(
+                    print("  Turn {}: Agent {} {} the {} for ${:,}; wealth ${:,}".format(
                         event["turn"], event["agent_id"], action,
-                        event["house_type"], event["amount"], event["wealth"]
+                        building_names[event["house_type"]], event["amount"], event["wealth"]
                     ))
         else:
             print("  None")
@@ -503,10 +569,10 @@ class Population:
         if rejections:
             for event in rejections:
                 x, y = event["position"]
-                print("  Turn {}: Agent {} was rejected from the {} at type {} building "
+                print("  Turn {}: Agent {} was rejected from the {} at the {} "
                       "({}, {}) (score: {}; required: {}).".format(
                     event["turn"], event["agent_id"], event["job"],
-                    event["building_type"], x, y,
+                    building_names[event["building_type"]], x, y,
                     event["score"], event["minimum_score"]
                 ))
         else:

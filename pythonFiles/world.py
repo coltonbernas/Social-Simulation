@@ -1,16 +1,27 @@
 import random
 try:
-    from .config import grid_rows, grid_cols, building_count
+    from .config import grid_rows, grid_cols, building_counts
 except ImportError:
-    from config import grid_rows, grid_cols, building_count
+    from config import grid_rows, grid_cols, building_counts
 
 class World:
-    def __init__(self, rows=grid_rows, cols=grid_cols, buildings=building_count):
+    def __init__(self, rows=grid_rows, cols=grid_cols, buildings=None):
         self.rows = rows
         self.cols = cols
         self.grid = [[0 for _ in range(cols)] for _ in range(rows)]
         self.agent_grid = [[0 for _ in range(cols)] for _ in range(rows)]
-        self.building_count = buildings
+        if buildings is None:
+            requested_counts = dict(building_counts)
+        else:
+            # Preserve the older World(buildings=N) constructor behavior.
+            names = tuple(building_counts)
+            requested_counts = {name: 0 for name in names}
+            for index in range(buildings):
+                name = names[index % len(names)]
+                requested_counts[name] += 1
+        self.building_count = sum(requested_counts.values())
+        if self.building_count > rows * cols:
+            raise ValueError("Total building count cannot exceed the number of grid cells")
         self.building_jobs = {}
         self.job_opening_versions = {}
         self.school_occupants = {}
@@ -31,7 +42,7 @@ class World:
         self.communication_events = []
         self.money_transfer_events = []
         self.disease_events = []
-        self.place_buildings(buildings)
+        self.place_buildings(requested_counts)
         self.turnNo = 0
 
 
@@ -81,26 +92,36 @@ class World:
               ))
         return True
 
-    def place_buildings(self, count):
-        placed = 0
-        while placed < count:
-            row = random.randint(0, self.rows - 1)
-            col = random.randint(0, self.cols - 1)
-            if self.grid[row][col] == 0:
-                building_type = 1 + (placed % 7)
-                self.grid[row][col] = building_type
-                location = (row, col)
-                if building_type == 3:
-                    self.school_occupants[location] = set()
-                elif building_type == 4:
-                    self.grocery_stores.add(location)
-                    self.grocery_occupants[location] = set()
-                elif building_type == 5:
-                    self.hospitals.add(location)
-                    self.hospital_occupants[location] = set()
-                elif building_type in (6, 7):
-                    self.houses[location] = set()
-                else:
-                    self.building_jobs[location] = None
-                    self.job_opening_versions[location] = 0
-                placed += 1
+    def place_buildings(self, counts):
+        requested_types = []
+        names_to_types = {
+            "type_1_workplace": 1,
+            "type_2_workplace": 2,
+            "school": 3,
+            "grocery_store": 4,
+            "hospital": 5,
+            "budget_house": 6,
+            "premium_house": 7,
+        }
+        for name, building_type in names_to_types.items():
+            requested_types.extend([building_type] * counts[name])
+        locations = random.sample(
+            [(row, col) for row in range(self.rows) for col in range(self.cols)],
+            len(requested_types),
+        )
+        for building_type, location in zip(requested_types, locations):
+            row, col = location
+            self.grid[row][col] = building_type
+            if building_type == 3:
+                self.school_occupants[location] = set()
+            elif building_type == 4:
+                self.grocery_stores.add(location)
+                self.grocery_occupants[location] = set()
+            elif building_type == 5:
+                self.hospitals.add(location)
+                self.hospital_occupants[location] = set()
+            elif building_type in (6, 7):
+                self.houses[location] = set()
+            else:
+                self.building_jobs[location] = None
+                self.job_opening_versions[location] = 0

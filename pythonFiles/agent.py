@@ -11,7 +11,7 @@ try:
         grocery_food_health_restore, grocery_food_mental_restore,
         mental_health_recovery_per_turn,
         stress_mental_health_initial_drain, stress_mental_health_sustained_drain,
-        hospital_stay_duration_turns,
+        hospital_stay_duration_turns, building_names,
     )
 except ImportError:
     from config import (
@@ -24,7 +24,7 @@ except ImportError:
         grocery_food_health_restore, grocery_food_mental_restore,
         mental_health_recovery_per_turn,
         stress_mental_health_initial_drain, stress_mental_health_sustained_drain,
-        hospital_stay_duration_turns,
+        hospital_stay_duration_turns, building_names,
     )
 
 
@@ -320,8 +320,8 @@ class Agent:
                  "event": "bought", "house_type": house_type,
                  "position": location, "amount": cost, "wealth": self.wealth}
         world_obj.house_events.append(event)
-        print("Agent {} bought a type {} house for ${:,} (wealth: ${:,}).".format(
-            self.id, house_type, cost, self.wealth
+        print("Agent {} bought a {} for ${:,} (wealth: ${:,}).".format(
+            self.id, building_names[house_type], cost, self.wealth
         ))
         return True
 
@@ -343,8 +343,8 @@ class Agent:
                      "event": "paid", "house_type": house_type,
                      "position": self.house, "amount": cost, "wealth": self.wealth}
             world_obj.house_events.append(event)
-            print("Agent {} paid ${:,} for type {} house rent (wealth: ${:,}).".format(
-                self.id, cost, house_type, self.wealth
+            print("Agent {} paid ${:,} rent for the {} (wealth: ${:,}).".format(
+                self.id, cost, building_names[house_type], self.wealth
             ))
         else:
             location = self.house
@@ -357,8 +357,8 @@ class Agent:
                      "position": location, "amount": cost, "wealth": self.wealth,
                      "mental_health": self.mental_health}
             world_obj.house_events.append(event)
-            print("Agent {} was evicted from type {} house; lost 25 mental health (now {}).".format(
-                self.id, house_type, self.mental_health
+            print("Agent {} was evicted from the {}; lost 25 mental health (now {}).".format(
+                self.id, building_names[house_type], self.mental_health
             ))
 
     def buy_food(self, world_obj, location):
@@ -579,8 +579,8 @@ class Agent:
             else:
                 preferred_moves = [(step_x, step_y)]
             if (target_x, target_y) in visible_buildings:
-                print("Agent {} spotted a type {} building at ({}, {}).".format(
-                    self.id, world_obj.grid[target_x][target_y], target_x, target_y
+                print("Agent {} spotted a {} at ({}, {}).".format(
+                    self.id, building_names[world_obj.grid[target_x][target_y]], target_x, target_y
                 ))
 
         possible_moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]
@@ -733,8 +733,8 @@ class Agent:
                 "building_type": building_type,
                 "position": building_location,
             })
-            print("Agent {} entered type {} building at ({}, {}).".format(
-                self.id, building_type, self.pos_x, self.pos_y
+            print("Agent {} entered the {} at ({}, {}).".format(
+                self.id, building_names[building_type], self.pos_x, self.pos_y
             ))
             if building_type in (1, 2):
                 self.apply_for_job(world_obj, building_type, building_location)
@@ -845,8 +845,8 @@ class Agent:
             self.job = job_title
             self.employed_at = building_location
             world_obj.hiring_events.append(event.copy())
-            print("Agent {} successfully got the {} at the type {} building!".format(
-                self.id, job_title, building_type
+            print("Agent {} successfully got the {} at the {}!".format(
+                self.id, job_title, building_names[building_type]
             ))
         else:
             print("Agent {} was not hired for the {} (score: {}; required: {}); "
