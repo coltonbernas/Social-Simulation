@@ -7,6 +7,11 @@ try:
         disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
         type_1_income_per_turn, type_2_income_per_turn,
         low_wealth_threshold, low_wealth_stress_turns,
+        grocery_hunger_threshold, grocery_food_cost,
+        grocery_food_health_restore, grocery_food_mental_restore,
+        mental_health_recovery_per_turn,
+        stress_mental_health_initial_drain, stress_mental_health_sustained_drain,
+        hospital_stay_duration_turns,
     )
 except ImportError:
     from config import (
@@ -15,6 +20,11 @@ except ImportError:
         disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
         type_1_income_per_turn, type_2_income_per_turn,
         low_wealth_threshold, low_wealth_stress_turns,
+        grocery_hunger_threshold, grocery_food_cost,
+        grocery_food_health_restore, grocery_food_mental_restore,
+        mental_health_recovery_per_turn,
+        stress_mental_health_initial_drain, stress_mental_health_sustained_drain,
+        hospital_stay_duration_turns,
     )
 
 
@@ -50,6 +60,10 @@ class Agent:
         self.low_wealth_turns = 0
         self.job = None
         self.employed_at = None
+        self.returning_to_job = False
+        self.hospitalized_at = None
+        self.hospital_stay_turns = 0
+        self.hospital_visit_event = None
         # Building coordinates map to the opening version last attempted.
         self.applied_buildings = {}
         self.hunger_max = 100
@@ -270,17 +284,99 @@ class Agent:
         for event in current_events:
             if event not in self.active_stressful_events:
                 # A new stressful event has an immediate impact.
-                self.mental_health = max(0, self.mental_health - 5)
+                self.mental_health = max(
+                    0, self.mental_health - stress_mental_health_initial_drain
+                )
             else:
                 # The impact continues on every turn the event remains active.
-                self.mental_health = max(0, self.mental_health - 2)
+                self.mental_health = max(
+                    0, self.mental_health - stress_mental_health_sustained_drain
+                )
+        if not current_events:
+            self.mental_health = min(
+                100, self.mental_health + mental_health_recovery_per_turn
+            )
         self.active_stressful_events = current_events
 
-    def move(self, world_obj, rows=grid_rows, cols=grid_cols):
+    def can_buy_food(self):
+        return self.wealth >= grocery_food_cost and self.hunger < grocery_hunger_threshold
+
+    def buy_food(self, world_obj, location):
+        """Buy food at a grocery store and restore hunger, health, and mood."""
+        if location not in world_obj.grocery_stores or not self.can_buy_food():
+            return False
+        if self.wealth < grocery_food_cost:
+            print("Agent {} cannot afford food at the grocery store (cost: ${:,}; wealth: ${:,}).".format(
+                self.id, grocery_food_cost, self.wealth
+            ))
+            return False
+
+        self.wealth -= grocery_food_cost
+        self.hunger = self.hunger_max
+        self.health = min(health_max, self.health + grocery_food_health_restore)
+        self.mental_health = min(100, self.mental_health + grocery_food_mental_restore)
+        event = {
+            "turn": world_obj.turnNo + 1,
+            "agent_id": self.id,
+            "position": location,
+            "cost": grocery_food_cost,
+            "wealth": self.wealth,
+            "health": self.health,
+            "mental_health": self.mental_health,
+            "hunger": self.hunger,
+        }
+        world_obj.grocery_events.append(event)
         if self.job == "Type 2 job":
+            self.returning_to_job = True
+        print("Agent {} bought food for ${:,} at the grocery store; hunger {}, health {}, mental health {}, wealth ${:,}.".format(
+            self.id, grocery_food_cost, self.hunger, self.health,
+            self.mental_health, self.wealth
+        ))
+        return True
+
+    def advance_hospital_stay(self, world_obj):
+        """Cure an admitted agent after one full turn in a hospital."""
+        if self.hospitalized_at is None:
+            return False
+        self.hospital_stay_turns += 1
+        if self.hospital_stay_turns < hospital_stay_duration_turns:
+            return False
+
+        cured_diseases = sorted(self.diseases)
+        self.diseases.clear()
+        if self.hospital_visit_event is not None:
+            self.hospital_visit_event["cured_turn"] = world_obj.turnNo + 1
+            self.hospital_visit_event["turns_in_hospital"] = self.hospital_stay_turns
+            self.hospital_visit_event["outcome"] = "cured"
+            self.hospital_visit_event = None
+        self.hospitalized_at = None
+        self.hospital_stay_turns = 0
+        occupants = world_obj.hospital_occupants.get((self.pos_x, self.pos_y))
+        if occupants is not None:
+            occupants.discard(self.id)
+            if world_obj.agent_grid[self.pos_x][self.pos_y] == self.id:
+                world_obj.agent_grid[self.pos_x][self.pos_y] = next(iter(occupants), 0)
+        print("Agent {} completed one turn in the hospital and was cured of {}.".format(
+            self.id, ", ".join(cured_diseases)
+        ))
+        return True
+
+    def move(self, world_obj, rows=grid_rows, cols=grid_cols):
+        if self.hospitalized_at is not None:
+            print("Agent {} is staying in the hospital for treatment.".format(self.id))
+            return None
+        if (self.job == "Type 2 job" and not self.can_buy_food()
+                and not self.diseases
+                and not self.returning_to_job):
             print("Agent {} is staying at their type 2 job.".format(self.id))
             return None
-        if self.schooling_at is not None:
+        if (self.job == "Type 2 job" and self.returning_to_job
+                and not self.diseases
+                and (self.pos_x, self.pos_y) == self.employed_at):
+            self.returning_to_job = False
+            print("Agent {} returned to their type 2 job and is staying there.".format(self.id))
+            return None
+        if self.schooling_at is not None and not self.diseases:
             print("Agent {} is attending school ({}/5 turns).".format(
                 self.id, self.school_turns
             ))
@@ -309,7 +405,39 @@ class Agent:
                 default=None,
             )
 
-        if school_target is not None:
+        grocery_target = None
+        if self.can_buy_food():
+            grocery_target = min(
+                world_obj.grocery_stores,
+                key=lambda location: (
+                    abs(location[0] - self.pos_x) + abs(location[1] - self.pos_y),
+                    location,
+                ),
+                default=None,
+            )
+            if (grocery_target == (self.pos_x, self.pos_y)
+                    and not self.diseases):
+                self.buy_food(world_obj, grocery_target)
+                return None
+
+        hospital_target = None
+        if self.diseases:
+            hospital_target = min(
+                world_obj.hospitals,
+                key=lambda location: (
+                    abs(location[0] - self.pos_x) + abs(location[1] - self.pos_y),
+                    location,
+                ),
+                default=None,
+            )
+
+        if hospital_target is not None:
+            target_x, target_y = hospital_target
+        elif grocery_target is not None:
+            target_x, target_y = grocery_target
+        elif self.job == "Type 2 job" and self.returning_to_job:
+            target_x, target_y = self.employed_at
+        elif school_target is not None:
             target_x, target_y = school_target
         elif job_targets:
             target_x, target_y = min(
@@ -382,8 +510,10 @@ class Agent:
             destination = (next_x, next_y)
             if destination == (self.pos_x, self.pos_y):
                 continue
+            if world_obj.grid[next_x][next_y] == 5 and not self.diseases:
+                continue
             if (world_obj.agent_grid[next_x][next_y] not in (0, self.id)
-                    and world_obj.grid[next_x][next_y] != 3):
+                    and world_obj.grid[next_x][next_y] not in (3, 4, 5)):
                 blocked_moves.append(move)
                 continue
             fallback_moves.append(move)
@@ -456,31 +586,47 @@ class Agent:
         next_x = max(0, min(rows-1, self.pos_x + dx))
         next_y = max(0, min(cols-1, self.pos_y + dy))
         other_agent_id = world_obj.agent_grid[next_x][next_y]
-        if other_agent_id not in (0, self.id) and world_obj.grid[next_x][next_y] != 3:
+        if (other_agent_id not in (0, self.id)
+                and world_obj.grid[next_x][next_y] not in (3, 4, 5)):
             print("Agent {} bumped into Agent {} at ({}, {}).".format(
                 self.id, other_agent_id, next_x, next_y
             ))
             return other_agent_id
 
         old_position = (self.pos_x, self.pos_y)
-        old_school_occupants = world_obj.school_occupants.get(old_position)
-        if old_school_occupants is not None:
-            old_school_occupants.discard(self.id)
+        old_shared_occupants = world_obj.school_occupants.get(old_position)
+        if old_shared_occupants is None:
+            old_shared_occupants = world_obj.grocery_occupants.get(old_position)
+        if old_shared_occupants is None:
+            old_shared_occupants = world_obj.hospital_occupants.get(old_position)
+        if old_shared_occupants is not None:
+            old_shared_occupants.discard(self.id)
             if world_obj.agent_grid[self.pos_x][self.pos_y] == self.id:
                 world_obj.agent_grid[self.pos_x][self.pos_y] = (
-                    next(iter(old_school_occupants)) if old_school_occupants else 0
+                    next(iter(old_shared_occupants)) if old_shared_occupants else 0
                 )
         else:
             world_obj.agent_grid[self.pos_x][self.pos_y] = 0
         self.pos_x, self.pos_y = next_x, next_y
+        if self.diseases and self.schooling_at is not None:
+            self.schooling_at = None
+            self.school_turns = 0
+        if (self.job == "Type 2 job" and self.returning_to_job
+                and (self.pos_x, self.pos_y) == self.employed_at):
+            self.returning_to_job = False
         self.previous_position = old_position
         new_position = (self.pos_x, self.pos_y)
         self.visited_positions.add(new_position)
         self.position_visits[new_position] = self.position_visits.get(new_position, 0) + 1
 
         building_location = (self.pos_x, self.pos_y)
-        if world_obj.grid[self.pos_x][self.pos_y] == 3:
-            world_obj.school_occupants[building_location].add(self.id)
+        if world_obj.grid[self.pos_x][self.pos_y] in (3, 4, 5):
+            occupants = world_obj.school_occupants.get(building_location)
+            if occupants is None:
+                occupants = world_obj.grocery_occupants.get(building_location)
+            if occupants is None:
+                occupants = world_obj.hospital_occupants.get(building_location)
+            occupants.add(self.id)
             if world_obj.agent_grid[self.pos_x][self.pos_y] == 0:
                 world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         else:
@@ -503,6 +649,26 @@ class Agent:
                 self.apply_for_job(world_obj, building_type, building_location)
             elif building_type == 3 and school_target == building_location:
                 self.start_school(world_obj, building_location)
+            elif building_type == 4:
+                self.buy_food(world_obj, building_location)
+            elif building_type == 5 and self.diseases:
+                self.hospitalized_at = building_location
+                self.hospital_stay_turns = 0
+                self.hospital_visit_event = {
+                    "admitted_turn": world_obj.turnNo + 1,
+                    "agent_id": self.id,
+                    "position": building_location,
+                    "diseases": sorted(self.diseases),
+                    "cured_turn": None,
+                    "turns_in_hospital": None,
+                    "outcome": "in treatment",
+                }
+                world_obj.hospital_events.append(self.hospital_visit_event)
+                if self.job == "Type 2 job":
+                    self.returning_to_job = True
+                print("Agent {} entered the hospital with {}; treatment takes one turn.".format(
+                    self.id, ", ".join(sorted(self.diseases))
+                ))
 
     def start_school(self, world_obj, location):
         """Enroll the agent at a school; multiple agents may share its tile."""

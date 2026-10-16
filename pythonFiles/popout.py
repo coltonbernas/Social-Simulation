@@ -133,9 +133,7 @@ class SimulationWindow:
         self.log.configure(state="disabled")
 
     def _finished(self):
-        return (not self.world.can_accept_application(self.population.agents)
-                and not self.world.has_school_activity(self.population.agents)
-                or self.world.turnNo >= 10000)
+        return self.final_reported or not self.population.agents
 
     def toggle_running(self):
         if self.running:
@@ -189,6 +187,7 @@ class SimulationWindow:
         before_quits = len(self.world.job_quit_events)
         before_deaths = len(self.world.death_events)
         before_school = len(self.world.school_events)
+        before_grocery = len(self.world.grocery_events)
         before_diseases = len(self.world.disease_events)
         before_messages = len(self.world.communication_events)
         self.population.step_agents(self.world)
@@ -198,6 +197,7 @@ class SimulationWindow:
         quits = self.world.job_quit_events[before_quits:]
         deaths = self.world.death_events[before_deaths:]
         school_events = self.world.school_events[before_school:]
+        grocery_events = self.world.grocery_events[before_grocery:]
         disease_events = self.world.disease_events[before_diseases:]
         messages = self.world.communication_events[before_messages:]
         for event in added:
@@ -229,6 +229,10 @@ class SimulationWindow:
                 self._append_log("Turn {}: Agent {} graduated; intelligence is now {}.".format(
                     event["turn"], event["agent_id"], event["intelligence"]
                 ))
+        for event in grocery_events:
+            self._append_log("Turn {}: Agent {} bought food for ${:,}; wealth is now ${:,}.".format(
+                event["turn"], event["agent_id"], event["cost"], event["wealth"]
+            ))
         for event in disease_events:
             if event.get("source") == "natural":
                 self._append_log("Turn {}: Agent {} contracted {} naturally.".format(
@@ -286,15 +290,10 @@ class SimulationWindow:
         if reason:
             print(reason)
             self._append_log(reason)
-        elif self.world.open_jobs == 0:
-            print("All building jobs are filled; simulation done.")
-            self._append_log("All building jobs are filled; simulation done.")
-        elif not self.world.can_accept_application(self.population.agents):
-            print("No more agents can apply for the remaining jobs.")
-            self._append_log("No more agents can apply for the remaining jobs.")
-        elif self.world.turnNo >= 10000:
-            print("Reached the 10000 turn limit.")
-            self._append_log("Reached the 10000 turn limit.")
+        else:
+            message = "All agents have died; simulation done."
+            print(message)
+            self._append_log(message)
         self.population.print_stat_card(self.world)
         self._append_agent_wealth()
         self._append_log("Simulation finished.")
@@ -324,6 +323,8 @@ class SimulationWindow:
                         1: ("#f5b82e", "#ca8a04"),
                         2: ("#10b981", "#047857"),
                         3: ("#3b82f6", "#1d4ed8"),
+                        4: ("#ef4444", "#b91c1c"),
+                        5: ("#8b5cf6", "#6d28d9"),
                     }
                     color, outline = colors[building_type]
                     canvas.create_rectangle(

@@ -14,6 +14,12 @@ class World:
         self.building_jobs = {}
         self.job_opening_versions = {}
         self.school_occupants = {}
+        self.grocery_stores = set()
+        self.grocery_occupants = {}
+        self.hospitals = set()
+        self.hospital_occupants = {}
+        self.hospital_events = []
+        self.grocery_events = []
         self.school_events = []
         self.building_entries = []
         self.job_application_events = []
@@ -48,6 +54,9 @@ class World:
             for agent in agents
         )
 
+    def has_grocery_activity(self, agents):
+        return any(agent.can_buy_food() for agent in agents)
+
     def reopen_job(self, location, former_holder, reason="left the job"):
         """Vacate a job and notify agents that its opening is available again."""
         if self.building_jobs.get(location) != former_holder.id:
@@ -75,11 +84,17 @@ class World:
             row = random.randint(0, self.rows - 1)
             col = random.randint(0, self.cols - 1)
             if self.grid[row][col] == 0:
-                building_type = 1 + (placed % 3)
+                building_type = 1 + (placed % 5)
                 self.grid[row][col] = building_type
                 location = (row, col)
                 if building_type == 3:
                     self.school_occupants[location] = set()
+                elif building_type == 4:
+                    self.grocery_stores.add(location)
+                    self.grocery_occupants[location] = set()
+                elif building_type == 5:
+                    self.hospitals.add(location)
+                    self.hospital_occupants[location] = set()
                 else:
                     self.building_jobs[location] = None
                     self.job_opening_versions[location] = 0

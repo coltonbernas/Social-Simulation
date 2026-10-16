@@ -96,6 +96,7 @@ class Population:
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
             else:
+                agent.advance_hospital_stay(world_obj)
                 agent.advance_school(world_obj)
         world_obj.turnNo +=1
 
@@ -108,12 +109,20 @@ class Population:
                 agent.employed_at, agent, reason="died from {}".format(cause)
             )
         location = (agent.pos_x, agent.pos_y)
-        school_occupants = world_obj.school_occupants.get(location)
-        if school_occupants is not None:
-            school_occupants.discard(agent.id)
+        if agent.hospital_visit_event is not None:
+            agent.hospital_visit_event["outcome"] = "died during treatment"
+            agent.hospital_visit_event["death_turn"] = world_obj.turnNo + 1
+            agent.hospital_visit_event = None
+        shared_occupants = world_obj.school_occupants.get(location)
+        if shared_occupants is None:
+            shared_occupants = world_obj.grocery_occupants.get(location)
+        if shared_occupants is None:
+            shared_occupants = world_obj.hospital_occupants.get(location)
+        if shared_occupants is not None:
+            shared_occupants.discard(agent.id)
             if world_obj.agent_grid[agent.pos_x][agent.pos_y] == agent.id:
                 world_obj.agent_grid[agent.pos_x][agent.pos_y] = (
-                    next(iter(school_occupants)) if school_occupants else 0
+                    next(iter(shared_occupants)) if shared_occupants else 0
                 )
         else:
             world_obj.agent_grid[agent.pos_x][agent.pos_y] = 0
@@ -209,6 +218,37 @@ class Population:
         else:
             print("  None")
 
+        print("\nHospital visits:")
+        if world_obj.hospital_events:
+            for event in world_obj.hospital_events:
+                x, y = event["position"]
+                diseases = ", ".join(event["diseases"])
+                if event["outcome"] == "cured":
+                    print("  Agent {} admitted on turn {} with {}; cured after {} turn(s) on turn {} at ({}, {}).".format(
+                        event["agent_id"], event["admitted_turn"], diseases,
+                        event["turns_in_hospital"], event["cured_turn"], x, y
+                    ))
+                elif event["outcome"] == "died during treatment":
+                    print("  Agent {} admitted on turn {} with {}; died during treatment on turn {} at ({}, {}).".format(
+                        event["agent_id"], event["admitted_turn"], diseases,
+                        event["death_turn"], x, y
+                    ))
+                else:
+                    print("  Agent {} admitted on turn {} with {}; still in treatment at ({}, {}).".format(
+                        event["agent_id"], event["admitted_turn"], diseases, x, y
+                    ))
+        else:
+            print("  None")
+
+        print("\nGrocery purchases:")
+        if world_obj.grocery_events:
+            for event in world_obj.grocery_events:
+                print("  Turn {}: Agent {} bought food for ${:,}; wealth is now ${:,}.".format(
+                    event["turn"], event["agent_id"], event["cost"], event["wealth"]
+                ))
+        else:
+            print("  None")
+
         print("\nJob upgrades and vacancies:")
         if world_obj.job_quit_events:
             for event in world_obj.job_quit_events:
@@ -281,6 +321,8 @@ class Population:
                  if start_turn <= event["turn"] <= end_turn]
         school_events = [event for event in world_obj.school_events
                          if start_turn <= event["turn"] <= end_turn]
+        grocery_events = [event for event in world_obj.grocery_events
+                          if start_turn <= event["turn"] <= end_turn]
         disease_events = [event for event in world_obj.disease_events
                           if start_turn <= event["turn"] <= end_turn]
         communications = [
@@ -349,6 +391,16 @@ class Population:
                 print("  Turn {}: Agent {} {}; {} at ({}, {}) reopened".format(
                     event["turn"], event["agent_id"], event["reason"],
                     event["job"], x, y
+                ))
+        else:
+            print("  None")
+
+        print("Grocery purchases:")
+        if grocery_events:
+            for event in grocery_events:
+                print("  Turn {}: Agent {} bought food for ${:,}; health {}, mental health {}, wealth ${:,}.".format(
+                    event["turn"], event["agent_id"], event["cost"],
+                    event["health"], event["mental_health"], event["wealth"]
                 ))
         else:
             print("  None")
