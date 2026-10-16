@@ -4,13 +4,17 @@ try:
     from .config import (
         grid_rows, grid_cols, health_min, health_max,
         base_disease_transmission, disease_health_impact,
-        disease_chance_per_turn, hunger_drain_per_step,
+        disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
+        type_1_income_per_turn, type_2_income_per_turn,
+        low_wealth_threshold, low_wealth_stress_turns,
     )
 except ImportError:
     from config import (
         grid_rows, grid_cols, health_min, health_max,
         base_disease_transmission, disease_health_impact,
-        disease_chance_per_turn, hunger_drain_per_step,
+        disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
+        type_1_income_per_turn, type_2_income_per_turn,
+        low_wealth_threshold, low_wealth_stress_turns,
     )
 
 
@@ -42,7 +46,8 @@ class Agent:
         #Gonna make this affect hard decisions and getting a job
         self.willpower = random.randint(0, 100)
         self.mental_health = 100
-        self.wealth = None
+        self.wealth = starting_wealth
+        self.low_wealth_turns = 0
         self.job = None
         self.employed_at = None
         # Building coordinates map to the opening version last attempted.
@@ -195,7 +200,7 @@ class Agent:
             ))
         if self.diseases:
             disease = sorted(self.diseases)[0]
-            self.damage_health(1, "disease: {}".format(disease))
+            self.damage_health(10, "disease: {}".format(disease))
         else:
             previous_health = self.health
             self.health = min(health_max, self.health + 1)
@@ -203,9 +208,16 @@ class Agent:
                 self.last_health_damage_cause = None
 
         if self.hunger <= 0:
-            self.damage_health(2, "hunger")
+            self.damage_health(5, "hunger")
 
         self.update_stressful_events()
+
+    def earn_income(self):
+        """Add this turn's wages for the agent's current job."""
+        if self.job == "Type 1 job":
+            self.wealth += type_1_income_per_turn
+        elif self.job == "Type 2 job":
+            self.wealth += type_2_income_per_turn
 
     def advance_school(self, world_obj):
         """Count attendance turns and award intelligence after five turns."""
@@ -246,11 +258,12 @@ class Agent:
     def update_stressful_events(self):
         """Apply immediate and sustained mental-health costs from stressors."""
         current_events = set()
-        if isinstance(self.wealth, (int, float)):
-            if self.wealth <= 0:
-                current_events.add("no_wealth")
-            elif self.wealth <= 10:
+        if self.wealth < low_wealth_threshold:
+            self.low_wealth_turns += 1
+            if self.low_wealth_turns > low_wealth_stress_turns:
                 current_events.add("low_wealth")
+        else:
+            self.low_wealth_turns = 0
         if self.hunger <= 0:
             current_events.add("hunger")
 
@@ -532,10 +545,23 @@ class Agent:
         health_score = (
             (self.health - health_min) * 100 / health_range if health_range else 100
         )
-        application_score = (
-            intelligence_score + self.willpower + self.mental_health + health_score
-        ) / 4
-        minimum_score = {1: 60, 2: 75}[building_type]
+        weights = {
+            "intelligence": 1.2,
+            "willpower": 1.0,
+            "mental_health": 0.8,
+            "health": 0.8,
+        }
+        weighted_total = (
+            intelligence_score * weights["intelligence"]
+            + self.willpower * weights["willpower"]
+            + self.mental_health * weights["mental_health"]
+            + health_score * weights["health"]
+        )
+        application_score = weighted_total / sum(weights.values())
+        # Keep type 1 reachable for an otherwise average agent; type 2 is
+        # harder, while allowing above-average intelligence to qualify with
+        # typical willpower and health.
+        minimum_score = {1: 60, 2: 73}[building_type]
         hired = application_score >= minimum_score
         job_title = "Type {} job".format(building_type)
         event = {

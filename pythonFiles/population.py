@@ -91,6 +91,7 @@ class Population:
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
                 continue
+            agent.earn_income()
             agent.update_health(world_obj)
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
@@ -243,6 +244,10 @@ class Population:
                 agent.id, agent.hunger, agent.hunger_max
             ))
 
+        print("\nAgent wealth:")
+        for agent in self.all_agents:
+            print("  Agent {}: ${}".format(agent.id, agent.wealth))
+
         print("\nAgent jobs:")
         for agent in self.all_agents:
             print("  Agent {}: {}".format(agent.id, agent.job or "unemployed"))
@@ -381,5 +386,8 @@ class Population:
                 ))
         else:
             print("  None")
+        print("Agent wealth:")
+        for agent in self.all_agents:
+            print("  Agent {}: ${:,}".format(agent.id, agent.wealth))
         print("Open jobs: {}".format(world_obj.open_jobs))
         print("-" * 58)

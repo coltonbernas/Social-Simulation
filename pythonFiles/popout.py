@@ -248,6 +248,7 @@ class SimulationWindow:
                 self._append_log("Batch complete: turns {}–{}; {} jobs remain open.".format(
                     self.batch_start, self.world.turnNo, self.world.open_jobs
                 ))
+                self._append_agent_wealth()
                 self.population.print_batch_report(self.world, self.batch_start, self.world.turnNo)
                 self.batch_remaining = 0
                 self.stop()
@@ -272,6 +273,12 @@ class SimulationWindow:
         ))
         self._append_log("Communications recorded: {}.".format(len(self.world.communication_events)))
 
+    def _append_agent_wealth(self):
+        self._append_log("Agent wealth: " + ", ".join(
+            "{}: ${:,}".format(agent.id, agent.wealth)
+            for agent in self.population.all_agents
+        ))
+
     def _report_finished(self, reason=None):
         if self.final_reported:
             return
@@ -289,6 +296,7 @@ class SimulationWindow:
             print("Reached the 10000 turn limit.")
             self._append_log("Reached the 10000 turn limit.")
         self.population.print_stat_card(self.world)
+        self._append_agent_wealth()
         self._append_log("Simulation finished.")
 
     def draw(self):
