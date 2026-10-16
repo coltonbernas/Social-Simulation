@@ -1,8 +1,8 @@
 {
   "rows": 15,
   "cols": 15,
-  "building_count": 5,
-  "agent_count": 5,
+  "building_count": 10,
+  "agent_count": 7,
   "health_min": 50,
   "health_max": 100,
   "base_disease_transmission": 0.20,
