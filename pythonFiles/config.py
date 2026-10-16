@@ -14,6 +14,7 @@ building_count = config.get("building_count", config.get("fruit_count", 4))
 agent_count = config["agent_count"]
 health_min = config.get("health_min", 0)
 health_max = config.get("health_max", 100)
+starting_health_min = config.get("starting_health_min", 50)
 base_disease_transmission = config.get("base_disease_transmission", 0.20)
 disease_health_impact = config.get("disease_health_impact", 20)
 disease_chance_per_turn = config.get("disease_chance_per_turn", 0.5)

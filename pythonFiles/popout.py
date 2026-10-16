@@ -190,6 +190,7 @@ class SimulationWindow:
         before_grocery = len(self.world.grocery_events)
         before_diseases = len(self.world.disease_events)
         before_messages = len(self.world.communication_events)
+        before_transfers = len(self.world.money_transfer_events)
         self.population.step_agents(self.world)
         print()
         added = self.world.building_entries[before_entries:]
@@ -200,6 +201,7 @@ class SimulationWindow:
         grocery_events = self.world.grocery_events[before_grocery:]
         disease_events = self.world.disease_events[before_diseases:]
         messages = self.world.communication_events[before_messages:]
+        transfers = self.world.money_transfer_events[before_transfers:]
         for event in added:
             x, y = event["position"]
             self._append_log("Turn {}: Agent {} entered type {} building at ({}, {}).".format(
@@ -244,7 +246,14 @@ class SimulationWindow:
                     event["source_id"]
                 ))
         for event in messages:
-            self._append_log("Turn {}: Agent {} shared information with Agent {}.".format(event["turn"], event["sender_id"], event["receiver_id"]))
+            self._append_log("Turn {}: {} interacted with {} and shared information.".format(
+                event["turn"], event["sender_name"], event["receiver_name"]
+            ))
+        for event in transfers:
+            self._append_log("Turn {}: {} gave ${:,} to {} ({}).".format(
+                event["turn"], event["from_name"], event["amount"],
+                event["to_name"], event["reason"]
+            ))
         self.draw()
         if self.batch_remaining:
             self.batch_remaining -= 1
@@ -283,6 +292,32 @@ class SimulationWindow:
             for agent in self.population.all_agents
         ))
 
+    def _append_social_history(self):
+        self._append_log("Interaction history:")
+        if self.world.communication_events:
+            for event in self.world.communication_events:
+                self._append_log("Turn {}: {} interacted with {}; shared {} known empty location(s).".format(
+                    event["turn"], event["sender_name"], event["receiver_name"],
+                    len(event["empty_locations"])
+                ))
+        else:
+            self._append_log("None")
+
+        self._append_log("Money transfers:")
+        if self.world.money_transfer_events:
+            for event in self.world.money_transfer_events:
+                self._append_log("Turn {}: {} gave ${:,} to {} ({}).".format(
+                    event["turn"], event["from_name"], event["amount"],
+                    event["to_name"], event["reason"]
+                ))
+        else:
+            self._append_log("None")
+
+        for agent in self.population.all_agents:
+            self._append_log("{} interacted with: {}".format(
+                agent.name, ", ".join(agent.interacted_agents) or "none"
+            ))
+
     def _report_finished(self, reason=None):
         if self.final_reported:
             return
@@ -296,6 +331,7 @@ class SimulationWindow:
             self._append_log(message)
         self.population.print_stat_card(self.world)
         self._append_agent_wealth()
+        self._append_social_history()
         self._append_log("Simulation finished.")
 
     def draw(self):
