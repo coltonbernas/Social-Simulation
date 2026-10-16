@@ -2,7 +2,7 @@ import random
 
 try:
     from .config import (
-        grid_rows, grid_cols, health_min, health_max,
+        grid_rows, grid_cols, health_min, health_max, starting_health_min,
         base_disease_transmission, disease_health_impact,
         disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
         type_1_income_per_turn, type_2_income_per_turn,
@@ -15,7 +15,7 @@ try:
     )
 except ImportError:
     from config import (
-        grid_rows, grid_cols, health_min, health_max,
+        grid_rows, grid_cols, health_min, health_max, starting_health_min,
         base_disease_transmission, disease_health_impact,
         disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
         type_1_income_per_turn, type_2_income_per_turn,
@@ -41,16 +41,14 @@ def random_intelligence():
 class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None):
         self.id = agent_id+1
+        self.name = "Agent {}".format(self.id)
         self.age = random.randint(1, 30) if age is None else age
         self.death_age = random.randint(80, 100)
         self.intelligence = random_intelligence()
-        # A simple physical-health score. Healthy agents tend toward 100;
-        # age and active disease lower the score over time.
-        starting_health_min = min(70, health_max)
-        self.health = max(
-            health_min,
-            min(health_max, random.randint(starting_health_min, health_max) - max(0, self.age - 60)),
-        )
+        # Initial health uses its own range; health_min remains the simulation
+        # floor for later damage and recovery.
+        spawn_health_min = max(health_min, min(starting_health_min, health_max))
+        self.health = random.randint(spawn_health_min, health_max)
         self.last_health_damage_cause = None
         self.diseases = set()
         #Gonna make this affect hard decisions and getting a job
@@ -99,6 +97,9 @@ class Agent:
         self.visited_positions = {(self.pos_x, self.pos_y)}
         self.position_visits = {(self.pos_x, self.pos_y): 1}
         self.previous_position = None
+        self.interacted_agents = []
+        self.interaction_last_turn = {}
+        self.visible_agent_ids = set()
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "

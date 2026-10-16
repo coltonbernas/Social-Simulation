@@ -25,35 +25,104 @@ class Population:
         return newborn
 
     def share_information(self, first, second, world_obj):
-        """Exchange known empty locations after two agents collide."""
+        """Record an in-sight interaction and exchange known empty locations."""
+        turn = world_obj.turnNo + 1
         first_locations = tuple(sorted(first.known_empty))
         second_locations = tuple(sorted(second.known_empty))
 
         first.receive_message(second_locations)
         second.receive_message(first_locations)
 
+        first_last_interaction = first.interaction_last_turn.get(second.id)
+        second_last_interaction = second.interaction_last_turn.get(first.id)
+        gift_offers = [
+            self._gift_offer(first, second, first_last_interaction, turn),
+            self._gift_offer(second, first, second_last_interaction, turn),
+        ]
+        gift_offers = [offer for offer in gift_offers if offer is not None]
+        if gift_offers:
+            # One interaction produces at most one gift, avoiding both agents
+            # immediately returning each other's money.
+            giver, receiver, amount, reason = max(
+                gift_offers,
+                key=lambda offer: (offer[2], offer[0].wealth, -offer[0].id),
+            )
+            self._transfer_wealth(giver, receiver, amount, reason, turn, world_obj)
+
+        if second.name not in first.interacted_agents:
+            first.interacted_agents.append(second.name)
+        if first.name not in second.interacted_agents:
+            second.interacted_agents.append(first.name)
+        first.interaction_last_turn[second.id] = turn
+        second.interaction_last_turn[first.id] = turn
+
         world_obj.communication_events.extend((
             {
-                "turn": world_obj.turnNo + 1,
+                "turn": turn,
                 "sender_id": first.id,
                 "receiver_id": second.id,
+                "sender_name": first.name,
+                "receiver_name": second.name,
                 "empty_locations": first_locations,
             },
             {
-                "turn": world_obj.turnNo + 1,
+                "turn": turn,
                 "sender_id": second.id,
                 "receiver_id": first.id,
+                "sender_name": second.name,
+                "receiver_name": first.name,
                 "empty_locations": second_locations,
             },
         ))
-        print("Agents {} and {} exchanged {} and {} known empty location(s).".format(
-            first.id, second.id, len(first_locations), len(second_locations)
+        print("{} interacted with {}; they exchanged {} and {} known empty location(s).".format(
+            first.name, second.name, len(first_locations), len(second_locations)
         ))
 
-        # A blocked move represents close contact. Either infectious agent
-        # may transmit to the other, with risk adjusted for the recipient's health.
+        # Close encounters can transmit disease, with risk adjusted for recipient health.
         self._try_transmission(first, second, world_obj)
         self._try_transmission(second, first, world_obj)
+
+    @staticmethod
+    def _gift_offer(giver, receiver, previous_interaction_turn, turn):
+        """Return the gift this unstressed agent can afford to offer, if any."""
+        if giver.active_stressful_events:
+            return None
+
+        if (previous_interaction_turn is not None
+                and turn - previous_interaction_turn >= 5):
+            amount = 500
+            reason = "reconnected after at least 5 turns"
+        elif receiver.wealth < 500:
+            amount = 250
+            reason = "recipient had less than $500"
+        else:
+            return None
+
+        if giver.wealth < amount:
+            return None
+        return giver, receiver, amount, reason
+
+    @staticmethod
+    def _transfer_wealth(giver, receiver, amount, reason, turn, world_obj):
+        """Record and print an affordable gift between two interacting agents."""
+        giver.wealth -= amount
+        receiver.wealth += amount
+        event = {
+            "turn": turn,
+            "from_id": giver.id,
+            "from_name": giver.name,
+            "to_id": receiver.id,
+            "to_name": receiver.name,
+            "amount": amount,
+            "reason": reason,
+            "giver_wealth": giver.wealth,
+            "receiver_wealth": receiver.wealth,
+        }
+        world_obj.money_transfer_events.append(event)
+        print("{} gave ${:,} to {} ({}). Wealth is now ${:,} and ${:,}.".format(
+            giver.name, amount, receiver.name, reason,
+            giver.wealth, receiver.wealth
+        ))
 
     @staticmethod
     def _try_transmission(source, target, world_obj):
@@ -80,13 +149,42 @@ class Population:
             if agent.age >= agent.death_age:
                 self._remove_agent(agent, world_obj, "old age")
 
-        # Agents exchange information only when a move is blocked by another
-        # agent occupying the destination cell.
+        # Record sightings after all agents have moved so each pair interacts at
+        # most once when they newly enter one another's adjacent sight line.
         agents_by_id = {agent.id: agent for agent in self.agents}
+        blocked_pairs = set()
         for agent in self.agents:
             other_agent_id = agent.move(world_obj)
             if other_agent_id is not None:
-                self.share_information(agent, agents_by_id[other_agent_id], world_obj)
+                blocked_pairs.add(tuple(sorted((agent.id, other_agent_id))))
+
+        current_sightings = {agent.id: set() for agent in self.agents}
+        interacted_pairs = set()
+        for index, first in enumerate(self.agents):
+            for second in self.agents[index + 1:]:
+                if max(abs(first.pos_x - second.pos_x), abs(first.pos_y - second.pos_y)) <= 1:
+                    pair = (first.id, second.id)
+                    current_sightings[first.id].add(second.id)
+                    current_sightings[second.id].add(first.id)
+                    newly_visible = (
+                        second.id not in first.visible_agent_ids
+                        and first.id not in second.visible_agent_ids
+                    )
+                    if newly_visible:
+                        self.share_information(first, second, world_obj)
+                        interacted_pairs.add(pair)
+
+        # Preserve collision-based disease transmission when the pair was
+        # already visible and therefore did not create a new interaction.
+        for first_id, second_id in blocked_pairs - interacted_pairs:
+            first = agents_by_id.get(first_id)
+            second = agents_by_id.get(second_id)
+            if first is not None and second is not None:
+                self._try_transmission(first, second, world_obj)
+                self._try_transmission(second, first, world_obj)
+
+        for agent in self.agents:
+            agent.visible_agent_ids = current_sightings[agent.id]
         for agent in list(self.agents):
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
@@ -299,11 +397,26 @@ class Population:
                     "({}, {})".format(x, y)
                     for x, y in event["empty_locations"]
                 ) or "none known"
-                print("  Turn {}: Agent {} told Agent {} these building-free places: {}".format(
-                    event["turn"], event["sender_id"], event["receiver_id"], locations
+                print("  Turn {}: {} interacted with {}; shared building-free locations: {}".format(
+                    event["turn"], event["sender_name"], event["receiver_name"], locations
                 ))
         else:
             print("  No messages were exchanged.")
+
+        print("\nMoney transfers:")
+        if world_obj.money_transfer_events:
+            for event in world_obj.money_transfer_events:
+                print("  Turn {}: {} gave ${:,} to {} ({}).".format(
+                    event["turn"], event["from_name"], event["amount"],
+                    event["to_name"], event["reason"]
+                ))
+        else:
+            print("  None")
+
+        print("\nAgents previously interacted with:")
+        for agent in self.all_agents:
+            names = ", ".join(agent.interacted_agents) or "none"
+            print("  {}: {}".format(agent.name, names))
         print("=" * 58)
 
     def print_batch_report(self, world_obj, start_turn, end_turn):
@@ -327,6 +440,10 @@ class Population:
                           if start_turn <= event["turn"] <= end_turn]
         communications = [
             event for event in world_obj.communication_events
+            if start_turn <= event["turn"] <= end_turn
+        ]
+        money_transfers = [
+            event for event in world_obj.money_transfer_events
             if start_turn <= event["turn"] <= end_turn
         ]
         print("\n" + "-" * 58)
@@ -433,8 +550,18 @@ class Population:
                     "({}, {})".format(x, y)
                     for x, y in event["empty_locations"]
                 ) or "none known"
-                print("  Turn {}: Agent {} told Agent {} these building-free places: {}".format(
-                    event["turn"], event["sender_id"], event["receiver_id"], locations
+                print("  Turn {}: {} interacted with {}; shared building-free locations: {}".format(
+                    event["turn"], event["sender_name"], event["receiver_name"], locations
+                ))
+        else:
+            print("  None")
+
+        print("Money transfers:")
+        if money_transfers:
+            for event in money_transfers:
+                print("  Turn {}: {} gave ${:,} to {} ({}).".format(
+                    event["turn"], event["from_name"], event["amount"],
+                    event["to_name"], event["reason"]
                 ))
         else:
             print("  None")
