@@ -74,7 +74,9 @@ class Agent:
         self.birth_date = None
         self.ethnicity = None
         self.immigration_status = None
-        self.personality_type = None
+        self.personality_type = random.choice((
+            "introverted", "extroverted", "ambivert"
+        ))
         self.inheritance = None
         self.genes = []
         self.religion = None
@@ -105,9 +107,9 @@ class Agent:
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
-              "intelligence: {}; willpower: {}".format(
+              "intelligence: {}; willpower: {}; personality: {}".format(
             self.id, self.pos_x, self.pos_y, self.age, self.death_age,
-            self.intelligence, self.willpower
+            self.intelligence, self.willpower, self.personality_type
         ))
 
     def get_safe_spawn_pos(self, world_obj, rows, cols):
