@@ -74,6 +74,7 @@ class Agent:
         self.birth_date = None
         self.ethnicity = None
         self.immigration_status = None
+        #Maybe make this affect interviews
         self.personality_type = random.choice((
             "introverted", "extroverted", "ambivert"
         ))
