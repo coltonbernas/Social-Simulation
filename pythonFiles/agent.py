@@ -42,6 +42,7 @@ class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None):
         self.id = agent_id+1
         self.name = "Agent {}".format(self.id)
+        self.gender = random.choice(("female", "male"))
         self.age = random.randint(1, 30) if age is None else age
         self.death_age = random.randint(80, 100)
         self.intelligence = random_intelligence()
@@ -108,9 +109,9 @@ class Agent:
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
-              "intelligence: {}; willpower: {}; personality: {}".format(
+              "intelligence: {}; willpower: {}; personality: {}; gender: {}".format(
             self.id, self.pos_x, self.pos_y, self.age, self.death_age,
-            self.intelligence, self.willpower, self.personality_type
+            self.intelligence, self.willpower, self.personality_type, self.gender
         ))
 
     def get_safe_spawn_pos(self, world_obj, rows, cols):

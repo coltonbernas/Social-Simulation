@@ -253,13 +253,13 @@ class Population:
         for agent in self.all_agents:
             death = deaths_by_agent.get(agent.id)
             if death:
-                print("  Agent {}: DIED at age {} (cause: {}); end intelligence: {}; personality: {}".format(
+                print("  Agent {}: DIED at age {} (cause: {}); end intelligence: {}; personality: {}; gender: {}".format(
                     agent.id, death["age"], death["cause"], agent.intelligence,
-                    agent.personality_type
+                    agent.personality_type, agent.gender
                 ))
             else:
-                print("  Agent {}: alive; end intelligence: {}; personality: {}".format(
-                    agent.id, agent.intelligence, agent.personality_type
+                print("  Agent {}: alive; end intelligence: {}; personality: {}; gender: {}".format(
+                    agent.id, agent.intelligence, agent.personality_type, agent.gender
                 ))
 
         print("\nHiring history:")

@@ -427,8 +427,8 @@ class SimulationWindow:
             self._append_log(message)
         self.population.print_stat_card(self.world)
         self._append_agent_wealth()
-        self._append_log("Agent personalities: " + ", ".join(
-            "{}: {}".format(agent.id, agent.personality_type)
+        self._append_log("Agent profiles: " + ", ".join(
+            "{}: {}, {}".format(agent.id, agent.gender, agent.personality_type)
             for agent in self.population.all_agents
         ))
         self._append_wealth_gini_graph()
