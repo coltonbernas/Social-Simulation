@@ -141,7 +141,7 @@ class Population:
         is_parent_child = (
             second.id in first.parent_ids or first.id in second.parent_ids
         )
-        points = min(30, previous_points + 5) if is_parent_child else previous_points + 5
+        points = min(10, previous_points + 5) if is_parent_child else previous_points + 5
         first.relationship_points[second.id] = points
         second.relationship_points[first.id] = points
 
@@ -151,7 +151,7 @@ class Population:
             first.dating_partner_id in (None, second.id)
             and second.dating_partner_id in (None, first.id)
         )
-        if points >= 31 and can_date_each_other:
+        if points >= 11 and can_date_each_other:
             first.dating_partner_id = second.id
             second.dating_partner_id = first.id
             if first.dating_since_turn is None:
@@ -179,10 +179,10 @@ class Population:
 
     @staticmethod
     def _relationship_stage(first, second, points):
-        if (points >= 31 and first.dating_partner_id == second.id
+        if (points >= 11 and first.dating_partner_id == second.id
                 and second.dating_partner_id == first.id):
             return "dating"
-        if points >= 16:
+        if points >= 6:
             return "friends"
         return "no relationship"
 
