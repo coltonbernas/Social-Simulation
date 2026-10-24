@@ -1,16 +1,16 @@
 {
-  "rows": 15,
-  "cols": 15,
+  "rows": 100,
+  "cols": 100,
   "building_counts": {
-    "type_1_workplace": 2,
-    "type_2_workplace": 2,
-    "school": 1,
-    "grocery_store": 1,
-    "hospital": 1,
-    "budget_house": 2,
-    "premium_house": 1
+    "type_1_workplace": 30,
+    "type_2_workplace": 15,
+    "school": 3,
+    "grocery_store": 3,
+    "hospital": 3,
+    "budget_house": 30,
+    "premium_house": 15
   },
-  "agent_count": 7,
+  "agent_count": 50,
   "health_min": 0,
   "health_max": 100,
   "starting_health_min": 50,

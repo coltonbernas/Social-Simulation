@@ -65,9 +65,21 @@ class Population:
             "parent_ids": (first_parent.id, second_parent.id),
             "parent_names": (first_parent.name, second_parent.name),
             "ethnicity_percentages": dict(inherited_percentages),
+            "position": (newborn.pos_x, newborn.pos_y),
+            "age": newborn.age,
+            "death_age": newborn.death_age,
+            "intelligence": newborn.intelligence,
+            "willpower": newborn.willpower,
+            "personality": newborn.personality_type,
+            "gender": newborn.gender,
         })
-        print("Agent {} was born to {} and {}; ethnicity: {}.".format(
-            newborn.id, first_parent.name, second_parent.name, inherited_ethnicity
+        print("Agent {} was born to {} and {}; spawned at ({}, {}); age: {}; "
+              "natural death age: {}; intelligence: {}; willpower: {}; "
+              "personality: {}; gender: {}; ethnicity: {}.".format(
+            newborn.id, first_parent.name, second_parent.name,
+            newborn.pos_x, newborn.pos_y, newborn.age, newborn.death_age,
+            newborn.intelligence, newborn.willpower, newborn.personality_type,
+            newborn.gender, inherited_ethnicity
         ))
         return newborn
 
@@ -520,9 +532,14 @@ class Population:
                     "{}% {}".format(round(percentage, 1), name)
                     for name, percentage in sorted(event["ethnicity_percentages"].items())
                 )
-                print("  Turn {}: Agent {} was born to {} and {}; ethnicity: {}.".format(
+                x, y = event["position"]
+                print("  Turn {}: Agent {} was born to {} and {}; spawned at ({}, {}); "
+                      "age: {}; natural death age: {}; intelligence: {}; willpower: {}; "
+                      "personality: {}; gender: {}; ethnicity: {}.".format(
                     event["turn"], event["agent_id"],
-                    event["parent_names"][0], event["parent_names"][1], ethnicity
+                    event["parent_names"][0], event["parent_names"][1], x, y,
+                    event["age"], event["death_age"], event["intelligence"],
+                    event["willpower"], event["personality"], event["gender"], ethnicity
                 ))
         else:
             print("  None")
@@ -778,9 +795,14 @@ class Population:
                     "{}% {}".format(round(percentage, 1), name)
                     for name, percentage in sorted(event["ethnicity_percentages"].items())
                 )
-                print("  Turn {}: Agent {} born to {} and {}; ethnicity: {}.".format(
+                x, y = event["position"]
+                print("  Turn {}: Agent {} born to {} and {}; spawned at ({}, {}); "
+                      "age: {}; natural death age: {}; intelligence: {}; willpower: {}; "
+                      "personality: {}; gender: {}; ethnicity: {}.".format(
                     event["turn"], event["agent_id"],
-                    event["parent_names"][0], event["parent_names"][1], ethnicity
+                    event["parent_names"][0], event["parent_names"][1], x, y,
+                    event["age"], event["death_age"], event["intelligence"],
+                    event["willpower"], event["personality"], event["gender"], ethnicity
                 ))
         else:
             print("  None")

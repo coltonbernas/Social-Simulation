@@ -271,9 +271,14 @@ class SimulationWindow:
                 "{}% {}".format(round(percentage, 1), name)
                 for name, percentage in sorted(event["ethnicity_percentages"].items())
             )
-            self._append_log("Turn {}: Agent {} was born to {} and {}; ethnicity: {}.".format(
+            x, y = event["position"]
+            self._append_log("Turn {}: Agent {} was born to {} and {}; spawned at ({}, {}); "
+                             "age: {}; natural death age: {}; intelligence: {}; willpower: {}; "
+                             "personality: {}; gender: {}; ethnicity: {}.".format(
                 event["turn"], event["agent_id"], event["parent_names"][0],
-                event["parent_names"][1], ethnicity
+                event["parent_names"][1], x, y, event["age"], event["death_age"],
+                event["intelligence"], event["willpower"], event["personality"],
+                event["gender"], ethnicity
             ))
         for event in transfers:
             self._append_log("Turn {}: {} transferred ${:,} to {} ({}).".format(
