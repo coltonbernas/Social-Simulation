@@ -190,6 +190,7 @@ class SimulationWindow:
         before_grocery = len(self.world.grocery_events)
         before_diseases = len(self.world.disease_events)
         before_messages = len(self.world.communication_events)
+        before_relationships = len(self.world.relationship_events)
         before_transfers = len(self.world.money_transfer_events)
         before_houses = len(self.world.house_events)
         self.population.step_agents(self.world)
@@ -202,6 +203,7 @@ class SimulationWindow:
         grocery_events = self.world.grocery_events[before_grocery:]
         disease_events = self.world.disease_events[before_diseases:]
         messages = self.world.communication_events[before_messages:]
+        relationships = self.world.relationship_events[before_relationships:]
         transfers = self.world.money_transfer_events[before_transfers:]
         houses = self.world.house_events[before_houses:]
         for event in added:
@@ -251,6 +253,17 @@ class SimulationWindow:
             self._append_log("Turn {}: {} interacted with {} and shared information.".format(
                 event["turn"], event["sender_name"], event["receiver_name"]
             ))
+        for event in relationships:
+            if event.get("reason"):
+                self._append_log("Turn {}: {} and {}; {}.".format(
+                    event["turn"], event["first_name"], event["second_name"],
+                    event["reason"]
+                ))
+            else:
+                self._append_log("Turn {}: {} and {}: {} relationship points ({}).".format(
+                    event["turn"], event["first_name"], event["second_name"],
+                    event["points"], event["stage"]
+                ))
         for event in transfers:
             self._append_log("Turn {}: {} gave ${:,} to {} ({}).".format(
                 event["turn"], event["from_name"], event["amount"],
@@ -312,6 +325,28 @@ class SimulationWindow:
             self._append_log("Wealth Gini coefficient: no agent wealth data available.")
         else:
             self._append_log("Wealth Gini coefficient: {:.3f}.".format(gini))
+
+    def _append_relationship_summary(self):
+        self._append_log("Relationships:")
+        found_relationship = False
+        for agent in self.population.all_agents:
+            for other_id, points in sorted(agent.relationship_points.items()):
+                if agent.id >= other_id:
+                    continue
+                other = next(
+                    (candidate for candidate in self.population.all_agents
+                     if candidate.id == other_id),
+                    None,
+                )
+                if other is None:
+                    continue
+                stage = self.population._relationship_stage(agent, other, points)
+                self._append_log("{} and {}: {} points, {}.".format(
+                    agent.name, other.name, points, stage
+                ))
+                found_relationship = True
+        if not found_relationship:
+            self._append_log("None")
 
     def _draw_wealth_gini_graph(self):
         """Render the final wealth Lorenz curve on the main popout canvas."""
@@ -431,6 +466,7 @@ class SimulationWindow:
             "{}: {}, {}".format(agent.id, agent.gender, agent.personality_type)
             for agent in self.population.all_agents
         ))
+        self._append_relationship_summary()
         self._append_wealth_gini_graph()
         self._append_social_history()
         self._append_log("Simulation finished.")

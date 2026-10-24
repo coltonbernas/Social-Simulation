@@ -35,9 +35,12 @@ class Population:
 
         first_last_interaction = first.interaction_last_turn.get(second.id)
         second_last_interaction = second.interaction_last_turn.get(first.id)
+        relationship_stage, relationship_points = self._advance_relationship(
+            first, second, turn, world_obj
+        )
         gift_offers = [
-            self._gift_offer(first, second, first_last_interaction, turn),
-            self._gift_offer(second, first, second_last_interaction, turn),
+            self._gift_offer(first, second, first_last_interaction, turn, relationship_stage),
+            self._gift_offer(second, first, second_last_interaction, turn, relationship_stage),
         ]
         gift_offers = [offer for offer in gift_offers if offer is not None]
         if gift_offers:
@@ -74,8 +77,9 @@ class Population:
                 "empty_locations": second_locations,
             },
         ))
-        print("{} interacted with {}; they exchanged {} and {} known empty location(s).".format(
-            first.name, second.name, len(first_locations), len(second_locations)
+        print("{} interacted with {} (relationship: {} points; {}). They exchanged {} and {} known empty location(s).".format(
+            first.name, second.name, relationship_points, relationship_stage,
+            len(first_locations), len(second_locations)
         ))
 
         # Close encounters can transmit disease, with risk adjusted for recipient health.
@@ -83,9 +87,53 @@ class Population:
         self._try_transmission(second, first, world_obj)
 
     @staticmethod
-    def _gift_offer(giver, receiver, previous_interaction_turn, turn):
+    def _advance_relationship(first, second, turn, world_obj):
+        """Award interaction points and establish friendship or exclusive dating."""
+        previous_points = first.relationship_points.get(second.id, 0)
+        old_stage = self._relationship_stage(first, second, previous_points)
+        points = previous_points + 5
+        first.relationship_points[second.id] = points
+        second.relationship_points[first.id] = points
+
+        can_date_each_other = (
+            first.dating_partner_id in (None, second.id)
+            and second.dating_partner_id in (None, first.id)
+        )
+        if points >= 31 and can_date_each_other:
+            first.dating_partner_id = second.id
+            second.dating_partner_id = first.id
+
+        stage = self._relationship_stage(first, second, points)
+        event = {
+            "turn": turn,
+            "first_id": first.id,
+            "second_id": second.id,
+            "first_name": first.name,
+            "second_name": second.name,
+            "points": points,
+            "stage": stage,
+            "stage_changed": stage != old_stage,
+        }
+        world_obj.relationship_events.append(event)
+        if event["stage_changed"]:
+            print("{} and {} are now {} ({} relationship points).".format(
+                first.name, second.name, stage, points
+            ))
+        return stage, points
+
+    @staticmethod
+    def _relationship_stage(first, second, points):
+        if (points >= 31 and first.dating_partner_id == second.id
+                and second.dating_partner_id == first.id):
+            return "dating"
+        if points >= 16:
+            return "friends"
+        return "no relationship"
+
+    @staticmethod
+    def _gift_offer(giver, receiver, previous_interaction_turn, turn, relationship_stage):
         """Return the gift this unstressed agent can afford to offer, if any."""
-        if giver.active_stressful_events:
+        if giver.active_stressful_events or relationship_stage not in ("friends", "dating"):
             return None
 
         if (previous_interaction_turn is not None
@@ -207,6 +255,29 @@ class Population:
             world_obj.reopen_job(
                 agent.employed_at, agent, reason="died from {}".format(cause)
             )
+        if agent.dating_partner_id is not None:
+            former_partner = next(
+                (other for other in self.agents
+                 if other.id == agent.dating_partner_id and other.id != agent.id),
+                None,
+            )
+            if former_partner is not None:
+                former_partner.dating_partner_id = None
+                world_obj.relationship_events.append({
+                    "turn": world_obj.turnNo + 1,
+                    "first_id": agent.id,
+                    "second_id": former_partner.id,
+                    "first_name": agent.name,
+                    "second_name": former_partner.name,
+                    "points": agent.relationship_points.get(former_partner.id, 0),
+                    "stage": "friends",
+                    "stage_changed": True,
+                    "reason": "dating relationship ended when an agent died",
+                })
+                print("{} and {} are no longer dating because {} died.".format(
+                    agent.name, former_partner.name, agent.name
+                ))
+            agent.dating_partner_id = None
         location = (agent.pos_x, agent.pos_y)
         if agent.hospital_visit_event is not None:
             agent.hospital_visit_event["outcome"] = "died during treatment"
@@ -304,6 +375,22 @@ class Population:
                     print("  Turn {}: Agent {} {} the {} at ({}, {}) for ${:,}; wealth is now ${:,}".format(
                         event["turn"], event["agent_id"], action,
                         building_names[event["house_type"]], x, y, event["amount"], event["wealth"]
+                    ))
+        else:
+            print("  None")
+
+        print("\nRelationship history:")
+        if world_obj.relationship_events:
+            for event in world_obj.relationship_events:
+                if event.get("reason"):
+                    print("  Turn {}: {} and {}; {} ({} points).".format(
+                        event["turn"], event["first_name"], event["second_name"],
+                        event["reason"], event["points"]
+                    ))
+                else:
+                    print("  Turn {}: {} and {}: {} points, {}.".format(
+                        event["turn"], event["first_name"], event["second_name"],
+                        event["points"], event["stage"]
                     ))
         else:
             print("  None")
@@ -536,6 +623,8 @@ class Population:
         ]
         house_events = [event for event in world_obj.house_events
                         if start_turn <= event["turn"] <= end_turn]
+        relationship_events = [event for event in world_obj.relationship_events
+                               if start_turn <= event["turn"] <= end_turn]
         print("\n" + "-" * 58)
         print("BATCH REPORT: Turns {}-{}".format(start_turn, end_turn))
         print("Building entries:")
@@ -545,6 +634,23 @@ class Population:
                 print("  Turn {}: Agent {} entered the {} at ({}, {})".format(
                     event["turn"], event["agent_id"], building_names[event["building_type"]], x, y
                 ))
+        else:
+            print("  None")
+
+        print("Relationship changes:")
+        if relationship_events:
+            for event in relationship_events:
+                if event.get("reason"):
+                    print("  Turn {}: {} and {}; {}.".format(
+                        event["turn"], event["first_name"], event["second_name"],
+                        event["reason"]
+                    ))
+                else:
+                    print("  Turn {}: {} and {} have {} relationship points ({}){}".format(
+                        event["turn"], event["first_name"], event["second_name"],
+                        event["points"], event["stage"],
+                        " (stage changed)" if event["stage_changed"] else ""
+                    ))
         else:
             print("  None")
 

@@ -106,6 +106,8 @@ class Agent:
         self.interacted_agents = []
         self.interaction_last_turn = {}
         self.visible_agent_ids = set()
+        self.relationship_points = {}
+        self.dating_partner_id = None
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
