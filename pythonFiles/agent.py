@@ -54,59 +54,59 @@ class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None,
                  ethnicity=None, ethnicity_percentages=None, parent_ids=None,
                  birth_turn=None):
-        self.id = agent_id+1
-        self.name = "Agent {}".format(self.id)
-        self.gender = random.choice(("female", "male"))
-        self.age = random.randint(1, 30) if age is None else age
-        self.death_age = random.randint(80, 100)
-        self.intelligence = random_intelligence()
+        self.id = agent_id+1 # done
+        self.name = "Agent {}".format(self.id) # done
+        self.gender = random.choice(("female", "male")) # done
+        self.age = random.randint(1, 30) if age is None else age # done
+        self.death_age = random.randint(80, 100) # done
+        self.intelligence = random_intelligence() # done
         # Initial health uses its own range; health_min remains the simulation
         # floor for later damage and recovery.
         spawn_health_min = max(health_min, min(starting_health_min, health_max))
-        self.health = random.randint(spawn_health_min, health_max)
-        self.last_health_damage_cause = None
-        self.diseases = set()
+        self.health = random.randint(spawn_health_min, health_max) # done
+        self.last_health_damage_cause = None # done
+        self.diseases = set() #Mostly done need to add a little maybe; done
         #Gonna make this affect hard decisions and getting a job
-        self.willpower = random.randint(0, 100)
-        self.mental_health = 100
-        self.wealth = starting_wealth
-        self.house = None
-        self.house_turns_since_payment = 0
-        self.low_wealth_turns = 0
-        self.job = None
-        self.employed_at = None
-        self.returning_to_job = False
-        self.hospitalized_at = None
-        self.hospital_stay_turns = 0
-        self.hospital_visit_event = None
+        self.willpower = random.randint(0, 100) # done
+        self.mental_health = 100 # done
+        self.wealth = starting_wealth # done
+        self.house = None #done
+        self.house_turns_since_payment = 0 #done
+        self.low_wealth_turns = 0 # done
+        self.job = None #done
+        self.employed_at = None #done
+        self.returning_to_job = False # done
+        self.hospitalized_at = None #done
+        self.hospital_stay_turns = 0 #done
+        self.hospital_visit_event = None #done
         # Building coordinates map to the opening version last attempted.
-        self.applied_buildings = {}
-        self.hunger_max = 100
-        self.hunger = self.hunger_max
-        self.active_stressful_events = set()
-        self.political_status = None
-        self.birth_place = None
-        self.birth_date = None
-        self.ethnicity = ethnicity or random.choice(ETHNICITY_TYPES)
-        self.ethnicity_percentages = (
+        self.applied_buildings = {} #done
+        self.hunger_max = 100 #done
+        self.hunger = self.hunger_max #done
+        self.active_stressful_events = set() #done
+        self.political_status = None #To do
+        self.birth_place = None #To do
+        self.birth_date = None #done
+        self.ethnicity = ethnicity or random.choice(ETHNICITY_TYPES) # done
+        self.ethnicity_percentages = ( # done
             dict(ethnicity_percentages) if ethnicity_percentages is not None
             else {self.ethnicity: 100.0}
         )
-        self.parent_ids = set(parent_ids or ())
-        self.children_ids = set()
-        self.birth_turn = birth_turn
+        self.parent_ids = set(parent_ids or ()) # done
+        self.children_ids = set() # done
+        self.birth_turn = birth_turn # done
         self.immigration_status = None
         #Maybe make this affect interviews
-        self.personality_type = random.choice((
+        self.personality_type = random.choice(( # done
             "introverted", "extroverted", "ambivert"
         ))
         self.inheritance = None
         self.genes = []
         self.religion = None
         self.education = None
-        self.school_completed = False
-        self.schooling_at = None
-        self.school_turns = 0
+        self.school_completed = False # done
+        self.schooling_at = None # done
+        self.school_turns = 0 # done
         self.marital_status = None
         self.morality = None
         self.empathy = None
@@ -118,18 +118,18 @@ class Agent:
         self.needs = {}
         self.confidence = None
 
-        self.pos_x, self.pos_y  = self.get_safe_spawn_pos(world_obj, rows, cols)
+        self.pos_x, self.pos_y  = self.get_safe_spawn_pos(world_obj, rows, cols) # done
         # Cells observed or reported to contain no building.
-        self.known_empty = set()
-        self.visited_positions = {(self.pos_x, self.pos_y)}
-        self.position_visits = {(self.pos_x, self.pos_y): 1}
-        self.previous_position = None
-        self.interacted_agents = []
-        self.interaction_last_turn = {}
-        self.visible_agent_ids = set()
-        self.relationship_points = {}
-        self.dating_partner_id = None
-        self.dating_since_turn = None
+        self.known_empty = set() # done
+        self.visited_positions = {(self.pos_x, self.pos_y)} # done
+        self.position_visits = {(self.pos_x, self.pos_y): 1} # done
+        self.previous_position = None # done
+        self.interacted_agents = [] # done
+        self.interaction_last_turn = {} # done
+        self.visible_agent_ids = set() # done
+        self.relationship_points = {} # done
+        self.dating_partner_id = None # done
+        self.dating_since_turn = None # done
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "

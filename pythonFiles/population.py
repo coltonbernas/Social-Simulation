@@ -18,6 +18,7 @@ class Population:
             agent_id=self.next_agent_id,
             world_obj=world_obj,
             age=0,
+            birth_turn=world_obj.turnNo + 1,
         )
         self.next_agent_id += 1
         self.agents.append(newborn)
