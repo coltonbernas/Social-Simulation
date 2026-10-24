@@ -463,7 +463,9 @@ class SimulationWindow:
         self.population.print_stat_card(self.world)
         self._append_agent_wealth()
         self._append_log("Agent profiles: " + ", ".join(
-            "{}: {}, {}".format(agent.id, agent.gender, agent.personality_type)
+            "{}: {}, {}, {}".format(
+                agent.id, agent.gender, agent.personality_type, agent.ethnicity
+            )
             for agent in self.population.all_agents
         ))
         self._append_relationship_summary()

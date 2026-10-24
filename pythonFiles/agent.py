@@ -38,6 +38,18 @@ def random_intelligence():
     return random.randint(*score_range)
 
 
+ETHNICITY_TYPES = (
+    "East & Southeast Asian",
+    "South Asian",
+    "Arab & Middle Eastern",
+    "African (Sub-Saharan)",
+    "European & Slavic",
+    "Indigenous Peoples of the Americas",
+    "Indigenous Peoples of Oceania",
+    "Latino / Mestizo Populations",
+)
+
+
 class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None):
         self.id = agent_id+1
@@ -73,7 +85,7 @@ class Agent:
         self.political_status = None
         self.birth_place = None
         self.birth_date = None
-        self.ethnicity = None
+        self.ethnicity = random.choice(ETHNICITY_TYPES)
         self.immigration_status = None
         #Maybe make this affect interviews
         self.personality_type = random.choice((
@@ -111,9 +123,10 @@ class Agent:
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
-              "intelligence: {}; willpower: {}; personality: {}; gender: {}".format(
+              "intelligence: {}; willpower: {}; personality: {}; gender: {}; ethnicity: {}".format(
             self.id, self.pos_x, self.pos_y, self.age, self.death_age,
-            self.intelligence, self.willpower, self.personality_type, self.gender
+            self.intelligence, self.willpower, self.personality_type, self.gender,
+            self.ethnicity
         ))
 
     def get_safe_spawn_pos(self, world_obj, rows, cols):
