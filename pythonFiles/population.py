@@ -1,9 +1,9 @@
 try:
     from .agent import Agent
-    from .config import agent_count, building_names
+    from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
 except ImportError:
     from agent import Agent
-    from config import agent_count, building_names
+    from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
 
 
 class Population:
@@ -13,15 +13,62 @@ class Population:
         self.next_agent_id = count
 
     def birth(self, world_obj):
-        """Create and add a newborn agent whose age is exactly 1."""
+        """Create and add a newborn agent whose age is exactly 0."""
         newborn = Agent(
             agent_id=self.next_agent_id,
             world_obj=world_obj,
-            age=1,
+            age=0,
         )
         self.next_agent_id += 1
         self.agents.append(newborn)
         self.all_agents.append(newborn)
+        return newborn
+
+    def birth_child(self, world_obj, first_parent, second_parent):
+        """Create one child for a dating pair and inherit their ethnic makeup."""
+        inherited_percentages = {}
+        for parent in (first_parent, second_parent):
+            for ethnicity, percentage in parent.ethnicity_percentages.items():
+                inherited_percentages[ethnicity] = (
+                    inherited_percentages.get(ethnicity, 0.0) + percentage / 2
+                )
+        inherited_percentages = {
+            ethnicity: percentage
+            for ethnicity, percentage in inherited_percentages.items()
+            if percentage > 0
+        }
+        if len(inherited_percentages) == 1:
+            inherited_ethnicity = next(iter(inherited_percentages))
+        else:
+            inherited_ethnicity = " / ".join(
+                "{}% {}".format(round(percentage, 1), ethnicity)
+                for ethnicity, percentage in sorted(inherited_percentages.items())
+            )
+
+        newborn = Agent(
+            agent_id=self.next_agent_id,
+            world_obj=world_obj,
+            age=0,
+            ethnicity=inherited_ethnicity,
+            ethnicity_percentages=inherited_percentages,
+            parent_ids=(first_parent.id, second_parent.id),
+            birth_turn=world_obj.turnNo + 1,
+        )
+        self.next_agent_id += 1
+        self.agents.append(newborn)
+        self.all_agents.append(newborn)
+        first_parent.children_ids.add(newborn.id)
+        second_parent.children_ids.add(newborn.id)
+        world_obj.birth_events.append({
+            "turn": world_obj.turnNo + 1,
+            "agent_id": newborn.id,
+            "parent_ids": (first_parent.id, second_parent.id),
+            "parent_names": (first_parent.name, second_parent.name),
+            "ethnicity_percentages": dict(inherited_percentages),
+        })
+        print("Agent {} was born to {} and {}; ethnicity: {}.".format(
+            newborn.id, first_parent.name, second_parent.name, inherited_ethnicity
+        ))
         return newborn
 
     def share_information(self, first, second, world_obj):
@@ -90,20 +137,29 @@ class Population:
     def _advance_relationship(first, second, turn, world_obj):
         """Award interaction points and establish friendship or exclusive dating."""
         previous_points = first.relationship_points.get(second.id, 0)
-        old_stage = self._relationship_stage(first, second, previous_points)
-        points = previous_points + 5
+        old_stage = Population._relationship_stage(first, second, previous_points)
+        is_parent_child = (
+            second.id in first.parent_ids or first.id in second.parent_ids
+        )
+        points = min(30, previous_points + 5) if is_parent_child else previous_points + 5
         first.relationship_points[second.id] = points
         second.relationship_points[first.id] = points
 
         can_date_each_other = (
+            not is_parent_child
+            and
             first.dating_partner_id in (None, second.id)
             and second.dating_partner_id in (None, first.id)
         )
         if points >= 31 and can_date_each_other:
             first.dating_partner_id = second.id
             second.dating_partner_id = first.id
+            if first.dating_since_turn is None:
+                first.dating_since_turn = turn
+            if second.dating_since_turn is None:
+                second.dating_since_turn = turn
 
-        stage = self._relationship_stage(first, second, points)
+        stage = Population._relationship_stage(first, second, points)
         event = {
             "turn": turn,
             "first_id": first.id,
@@ -167,7 +223,7 @@ class Population:
             "receiver_wealth": receiver.wealth,
         }
         world_obj.money_transfer_events.append(event)
-        print("{} gave ${:,} to {} ({}). Wealth is now ${:,} and ${:,}.".format(
+        print("{} transferred ${:,} to {} ({}). Wealth is now ${:,} and ${:,}.".format(
             giver.name, amount, receiver.name, reason,
             giver.wealth, receiver.wealth
         ))
@@ -196,6 +252,8 @@ class Population:
                 agent.age += 1
             if agent.age >= agent.death_age:
                 self._remove_agent(agent, world_obj, "old age")
+
+        self._support_young_children(world_obj)
 
         # Record sightings after all agents have moved so each pair interacts at
         # most once when they newly enter one another's adjacent sight line.
@@ -233,6 +291,7 @@ class Population:
 
         for agent in self.agents:
             agent.visible_agent_ids = current_sightings[agent.id]
+        self._process_births(world_obj)
         for agent in list(self.agents):
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
@@ -246,6 +305,47 @@ class Population:
                 agent.advance_school(world_obj)
                 agent.advance_house_stay(world_obj)
         world_obj.turnNo +=1
+
+    def _support_young_children(self, world_obj):
+        """Transfer grocery money when young children are hungry and parents can cover it."""
+        turn = world_obj.turnNo + 1
+        for child in self.agents:
+            if (not child.parent_ids or child.birth_turn is None
+                    or turn - child.birth_turn > 10
+                    or child.hunger >= grocery_hunger_threshold):
+                continue
+            shortfall = max(0, grocery_food_cost - child.wealth)
+            parents = [parent for parent in self.agents if parent.id in child.parent_ids]
+            if shortfall == 0 or sum(parent.wealth for parent in parents) < shortfall:
+                continue
+            for parent in sorted(parents, key=lambda item: item.id):
+                amount = min(shortfall, parent.wealth)
+                if amount <= 0:
+                    continue
+                self._transfer_wealth(
+                    parent, child, amount,
+                    "parental grocery loan for Agent {}".format(child.id),
+                    turn, world_obj,
+                )
+                shortfall -= amount
+                if shortfall == 0:
+                    break
+
+    def _process_births(self, world_obj):
+        """Give an eligible dating pair one child after more than five turns."""
+        turn = world_obj.turnNo + 1
+        agents_by_id = {agent.id: agent for agent in self.agents}
+        for first in list(self.agents):
+            partner_id = first.dating_partner_id
+            if (partner_id is None
+                    or first.dating_since_turn is None
+                    or turn - first.dating_since_turn <= 5):
+                continue
+            second = agents_by_id.get(partner_id)
+            if (second is None or second.dating_partner_id != first.id
+                    or first.children_ids.intersection(second.children_ids)):
+                continue
+            self.birth_child(world_obj, first, second)
 
     def _remove_agent(self, agent, world_obj, cause):
         """Remove a dead agent and reopen any job they held."""
@@ -263,6 +363,7 @@ class Population:
             )
             if former_partner is not None:
                 former_partner.dating_partner_id = None
+                former_partner.dating_since_turn = None
                 world_obj.relationship_events.append({
                     "turn": world_obj.turnNo + 1,
                     "first_id": agent.id,
@@ -278,6 +379,22 @@ class Population:
                     agent.name, former_partner.name, agent.name
                 ))
             agent.dating_partner_id = None
+            agent.dating_since_turn = None
+
+        living_children = [
+            child for child in self.agents
+            if child.id != agent.id and child.id in agent.children_ids
+        ]
+        if living_children and agent.wealth > 0:
+            inherited_amount, remainder = divmod(agent.wealth, len(living_children))
+            for index, child in enumerate(sorted(living_children, key=lambda item: item.id)):
+                amount = inherited_amount + (1 if index < remainder else 0)
+                if amount > 0:
+                    self._transfer_wealth(
+                        agent, child, amount,
+                        "inheritance from Agent {}".format(agent.id),
+                        world_obj.turnNo + 1, world_obj,
+                    )
         location = (agent.pos_x, agent.pos_y)
         if agent.hospital_visit_event is not None:
             agent.hospital_visit_event["outcome"] = "died during treatment"
@@ -393,6 +510,20 @@ class Population:
                         event["turn"], event["first_name"], event["second_name"],
                         event["points"], event["stage"]
                     ))
+        else:
+            print("  None")
+
+        print("\nBirths:")
+        if world_obj.birth_events:
+            for event in world_obj.birth_events:
+                ethnicity = ", ".join(
+                    "{}% {}".format(round(percentage, 1), name)
+                    for name, percentage in sorted(event["ethnicity_percentages"].items())
+                )
+                print("  Turn {}: Agent {} was born to {} and {}; ethnicity: {}.".format(
+                    event["turn"], event["agent_id"],
+                    event["parent_names"][0], event["parent_names"][1], ethnicity
+                ))
         else:
             print("  None")
 
@@ -518,7 +649,7 @@ class Population:
         print("\nMoney transfers:")
         if world_obj.money_transfer_events:
             for event in world_obj.money_transfer_events:
-                print("  Turn {}: {} gave ${:,} to {} ({}).".format(
+                print("  Turn {}: {} transferred ${:,} to {} ({}).".format(
                     event["turn"], event["from_name"], event["amount"],
                     event["to_name"], event["reason"]
                 ))
@@ -626,6 +757,8 @@ class Population:
                         if start_turn <= event["turn"] <= end_turn]
         relationship_events = [event for event in world_obj.relationship_events
                                if start_turn <= event["turn"] <= end_turn]
+        births = [event for event in world_obj.birth_events
+                  if start_turn <= event["turn"] <= end_turn]
         print("\n" + "-" * 58)
         print("BATCH REPORT: Turns {}-{}".format(start_turn, end_turn))
         print("Building entries:")
@@ -634,6 +767,20 @@ class Population:
                 x, y = event["position"]
                 print("  Turn {}: Agent {} entered the {} at ({}, {})".format(
                     event["turn"], event["agent_id"], building_names[event["building_type"]], x, y
+                ))
+        else:
+            print("  None")
+
+        print("Births:")
+        if births:
+            for event in births:
+                ethnicity = ", ".join(
+                    "{}% {}".format(round(percentage, 1), name)
+                    for name, percentage in sorted(event["ethnicity_percentages"].items())
+                )
+                print("  Turn {}: Agent {} born to {} and {}; ethnicity: {}.".format(
+                    event["turn"], event["agent_id"],
+                    event["parent_names"][0], event["parent_names"][1], ethnicity
                 ))
         else:
             print("  None")
@@ -774,7 +921,7 @@ class Population:
         print("Money transfers:")
         if money_transfers:
             for event in money_transfers:
-                print("  Turn {}: {} gave ${:,} to {} ({}).".format(
+                print("  Turn {}: {} transferred ${:,} to {} ({}).".format(
                     event["turn"], event["from_name"], event["amount"],
                     event["to_name"], event["reason"]
                 ))

@@ -51,7 +51,9 @@ ETHNICITY_TYPES = (
 
 
 class Agent:
-    def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None):
+    def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None,
+                 ethnicity=None, ethnicity_percentages=None, parent_ids=None,
+                 birth_turn=None):
         self.id = agent_id+1
         self.name = "Agent {}".format(self.id)
         self.gender = random.choice(("female", "male"))
@@ -85,7 +87,14 @@ class Agent:
         self.political_status = None
         self.birth_place = None
         self.birth_date = None
-        self.ethnicity = random.choice(ETHNICITY_TYPES)
+        self.ethnicity = ethnicity or random.choice(ETHNICITY_TYPES)
+        self.ethnicity_percentages = (
+            dict(ethnicity_percentages) if ethnicity_percentages is not None
+            else {self.ethnicity: 100.0}
+        )
+        self.parent_ids = set(parent_ids or ())
+        self.children_ids = set()
+        self.birth_turn = birth_turn
         self.immigration_status = None
         #Maybe make this affect interviews
         self.personality_type = random.choice((
@@ -120,6 +129,7 @@ class Agent:
         self.visible_agent_ids = set()
         self.relationship_points = {}
         self.dating_partner_id = None
+        self.dating_since_turn = None
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "

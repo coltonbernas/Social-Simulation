@@ -191,6 +191,7 @@ class SimulationWindow:
         before_diseases = len(self.world.disease_events)
         before_messages = len(self.world.communication_events)
         before_relationships = len(self.world.relationship_events)
+        before_births = len(self.world.birth_events)
         before_transfers = len(self.world.money_transfer_events)
         before_houses = len(self.world.house_events)
         self.population.step_agents(self.world)
@@ -204,6 +205,7 @@ class SimulationWindow:
         disease_events = self.world.disease_events[before_diseases:]
         messages = self.world.communication_events[before_messages:]
         relationships = self.world.relationship_events[before_relationships:]
+        births = self.world.birth_events[before_births:]
         transfers = self.world.money_transfer_events[before_transfers:]
         houses = self.world.house_events[before_houses:]
         for event in added:
@@ -264,8 +266,17 @@ class SimulationWindow:
                     event["turn"], event["first_name"], event["second_name"],
                     event["points"], event["stage"]
                 ))
+        for event in births:
+            ethnicity = ", ".join(
+                "{}% {}".format(round(percentage, 1), name)
+                for name, percentage in sorted(event["ethnicity_percentages"].items())
+            )
+            self._append_log("Turn {}: Agent {} was born to {} and {}; ethnicity: {}.".format(
+                event["turn"], event["agent_id"], event["parent_names"][0],
+                event["parent_names"][1], ethnicity
+            ))
         for event in transfers:
-            self._append_log("Turn {}: {} gave ${:,} to {} ({}).".format(
+            self._append_log("Turn {}: {} transferred ${:,} to {} ({}).".format(
                 event["turn"], event["from_name"], event["amount"],
                 event["to_name"], event["reason"]
             ))
@@ -437,7 +448,7 @@ class SimulationWindow:
         self._append_log("Money transfers:")
         if self.world.money_transfer_events:
             for event in self.world.money_transfer_events:
-                self._append_log("Turn {}: {} gave ${:,} to {} ({}).".format(
+                self._append_log("Turn {}: {} transferred ${:,} to {} ({}).".format(
                     event["turn"], event["from_name"], event["amount"],
                     event["to_name"], event["reason"]
                 ))

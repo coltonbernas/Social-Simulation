@@ -41,6 +41,7 @@ class World:
         self.death_events = []
         self.communication_events = []
         self.relationship_events = []
+        self.birth_events = []
         self.money_transfer_events = []
         self.disease_events = []
         self.place_buildings(requested_counts)
