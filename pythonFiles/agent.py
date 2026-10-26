@@ -49,11 +49,67 @@ ETHNICITY_TYPES = (
     "Latino / Mestizo Populations",
 )
 
+RELIGION_DISTRIBUTIONS = {
+    "East & Southeast Asian": {
+        "Unaffiliated": 52, "Buddhism": 17, "Folk / Traditional Religions": 17,
+        "Islam": 13, "Christianity": 8,
+    },
+    "South Asian": {
+        "Hinduism": 65, "Islam": 31, "Sikhism": 1.75,
+        "Buddhism": 1.5, "Christianity": 1.75,
+    },
+    "Arab & Middle Eastern": {
+        "Islam": 92.5, "Christianity": 4.5, "Judaism": 1.75,
+        "Other / Unaffiliated / Druze / Baha'i": 1.25,
+    },
+    "African (Sub-Saharan)": {
+        "Christianity": 62.5, "Islam": 31,
+        "Traditional African Religions / Animism": 4, "Unaffiliated": 2.5,
+    },
+    "European & Slavic": {
+        "Christianity": 73.5, "Unaffiliated": 21.5, "Islam": 5.5,
+        "Other / Judaism / Buddhism": 1.5,
+    },
+    "Indigenous Peoples of the Americas": {
+        "Christianity": 82.5, "Traditional Indigenous / Syncretic Beliefs": 12.5,
+        "Unaffiliated": 6,
+    },
+    "Indigenous Peoples of Oceania": {
+        "Christianity": 82.5, "Traditional / Customary Beliefs": 10,
+        "Unaffiliated": 7.5,
+    },
+    "Latino / Mestizo Populations": {
+        "Roman Catholicism": 67.5,
+        "Protestant / Evangelical / Pentecostal": 20,
+        "Unaffiliated / Secular": 9,
+        "Other / Spiritist / Afro-Latin Traditions": 3.5,
+    },
+}
+
+
+def random_religion(ethnicity_percentages):
+    """Choose a religion using the ethnicity weighted regional percentages."""
+    weights = {}
+    for ethnicity, ethnicity_percentage in ethnicity_percentages.items():
+        distribution = RELIGION_DISTRIBUTIONS.get(ethnicity)
+        if distribution is None:
+            continue
+        for religion, percentage in distribution.items():
+            weights[religion] = weights.get(religion, 0) + (
+                ethnicity_percentage * percentage
+            )
+
+    if not weights:
+        return "Unaffiliated"
+    return random.choices(
+        population=list(weights), weights=list(weights.values()), k=1
+    )[0]
+
 
 class Agent:
     def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None,
                  ethnicity=None, ethnicity_percentages=None, parent_ids=None,
-                 birth_turn=None):
+                 birth_turn=None, religion=None):
         self.id = agent_id+1 # done
         self.name = "Agent {}".format(self.id) # done
         self.gender = random.choice(("female", "male")) # done
@@ -92,17 +148,20 @@ class Agent:
             dict(ethnicity_percentages) if ethnicity_percentages is not None
             else {self.ethnicity: 100.0}
         )
+        self.religion = (
+            religion if religion is not None
+            else random_religion(self.ethnicity_percentages)
+        ) # done
         self.parent_ids = set(parent_ids or ()) # done
         self.children_ids = set() # done
         self.birth_turn = birth_turn # done
         self.immigration_status = None
         #Maybe make this affect interviews
-        self.personality_type = random.choice(( # done
+        self.personality_type = random.choice(( # done can do extra
             "introverted", "extroverted", "ambivert"
         ))
         self.inheritance = None
         self.genes = []
-        self.religion = None
         self.education = None
         self.school_completed = False # done
         self.schooling_at = None # done
@@ -133,10 +192,11 @@ class Agent:
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
-              "intelligence: {}; willpower: {}; personality: {}; gender: {}; ethnicity: {}".format(
+              "intelligence: {}; willpower: {}; personality: {}; gender: {}; "
+              "ethnicity: {}; religion: {}".format(
             self.id, self.pos_x, self.pos_y, self.age, self.death_age,
             self.intelligence, self.willpower, self.personality_type, self.gender,
-            self.ethnicity
+            self.ethnicity, self.religion
         ))
 
     def get_safe_spawn_pos(self, world_obj, rows, cols):

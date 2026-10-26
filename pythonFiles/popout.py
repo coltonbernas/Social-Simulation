@@ -478,8 +478,8 @@ class SimulationWindow:
                 self._log("Turn {}: {} and {} are now {}.".format(
                     e["turn"], e["first_name"], e["second_name"], e["stage"]), "social")
         for e in new("birth_events"):
-            self._log("Turn {}: Agent {} was born to {} and {}.".format(
-                e["turn"], e["agent_id"], *e["parent_names"]), "life")
+            self._log("Turn {}: Agent {} was born to {} and {}; religion: {}.".format(
+                e["turn"], e["agent_id"], *e["parent_names"], e["religion"]), "life")
         for e in new("death_events"):
             self._log("Turn {}: Agent {} died from {} at age {}.".format(
                 e["turn"], e["agent_id"], e["cause"], e["age"]), "life")

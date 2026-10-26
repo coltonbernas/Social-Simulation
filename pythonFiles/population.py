@@ -1,3 +1,5 @@
+import random
+
 try:
     from .agent import Agent
     from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
@@ -54,6 +56,7 @@ class Population:
             ethnicity_percentages=inherited_percentages,
             parent_ids=(first_parent.id, second_parent.id),
             birth_turn=world_obj.turnNo + 1,
+            religion=random.choice((first_parent.religion, second_parent.religion)),
         )
         self.next_agent_id += 1
         self.agents.append(newborn)
@@ -73,14 +76,15 @@ class Population:
             "willpower": newborn.willpower,
             "personality": newborn.personality_type,
             "gender": newborn.gender,
+            "religion": newborn.religion,
         })
         print("Agent {} was born to {} and {}; spawned at ({}, {}); age: {}; "
               "natural death age: {}; intelligence: {}; willpower: {}; "
-              "personality: {}; gender: {}; ethnicity: {}.".format(
+              "personality: {}; gender: {}; ethnicity: {}; religion: {}.".format(
             newborn.id, first_parent.name, second_parent.name,
             newborn.pos_x, newborn.pos_y, newborn.age, newborn.death_age,
             newborn.intelligence, newborn.willpower, newborn.personality_type,
-            newborn.gender, inherited_ethnicity
+            newborn.gender, inherited_ethnicity, newborn.religion
         ))
         return newborn
 
@@ -263,6 +267,14 @@ class Population:
         for agent in list(self.agents):
             if agent.age < agent.death_age:
                 agent.age += 1
+            if (agent.parent_ids and agent.birth_turn is not None
+                    and agent.age == 10):
+                if random.random() < 0.20:
+                    previous_religion = agent.religion
+                    agent.religion = "Unaffiliated"
+                    print("Agent {} became unaffiliated at age 10 (previous religion: {}).".format(
+                        agent.id, previous_religion
+                    ))
             if agent.age >= agent.death_age:
                 self._remove_agent(agent, world_obj, "old age")
 
@@ -454,14 +466,14 @@ class Population:
         for agent in self.all_agents:
             death = deaths_by_agent.get(agent.id)
             if death:
-                print("  Agent {}: DIED at age {} (cause: {}); end intelligence: {}; personality: {}; gender: {}; ethnicity: {}".format(
+                print("  Agent {}: DIED at age {} (cause: {}); end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
                     agent.id, death["age"], death["cause"], agent.intelligence,
-                    agent.personality_type, agent.gender, agent.ethnicity
+                    agent.personality_type, agent.gender, agent.ethnicity, agent.religion
                 ))
             else:
-                print("  Agent {}: alive; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}".format(
+                print("  Agent {}: alive; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
                     agent.id, agent.intelligence, agent.personality_type, agent.gender,
-                    agent.ethnicity
+                    agent.ethnicity, agent.religion
                 ))
 
         print("\nHiring history:")
@@ -536,11 +548,12 @@ class Population:
                 x, y = event["position"]
                 print("  Turn {}: Agent {} was born to {} and {}; spawned at ({}, {}); "
                       "age: {}; natural death age: {}; intelligence: {}; willpower: {}; "
-                      "personality: {}; gender: {}; ethnicity: {}.".format(
+                      "personality: {}; gender: {}; ethnicity: {}; religion: {}.".format(
                     event["turn"], event["agent_id"],
                     event["parent_names"][0], event["parent_names"][1], x, y,
                     event["age"], event["death_age"], event["intelligence"],
-                    event["willpower"], event["personality"], event["gender"], ethnicity
+                    event["willpower"], event["personality"], event["gender"],
+                    ethnicity, event["religion"]
                 ))
         else:
             print("  None")
@@ -799,11 +812,12 @@ class Population:
                 x, y = event["position"]
                 print("  Turn {}: Agent {} born to {} and {}; spawned at ({}, {}); "
                       "age: {}; natural death age: {}; intelligence: {}; willpower: {}; "
-                      "personality: {}; gender: {}; ethnicity: {}.".format(
+                      "personality: {}; gender: {}; ethnicity: {}; religion: {}.".format(
                     event["turn"], event["agent_id"],
                     event["parent_names"][0], event["parent_names"][1], x, y,
                     event["age"], event["death_age"], event["intelligence"],
-                    event["willpower"], event["personality"], event["gender"], ethnicity
+                    event["willpower"], event["personality"], event["gender"],
+                    ethnicity, event["religion"]
                 ))
         else:
             print("  None")
