@@ -250,7 +250,8 @@ class Population:
         if not source.diseases:
             return
         disease = sorted(source.diseases)[0]
-        if target.catch_disease(disease):
+        # Pass world_obj so catch_disease can read active UI sliders
+        if target.catch_disease(world_obj, disease):
             world_obj.disease_events.append({
                 "turn": world_obj.turnNo + 1,
                 "source_id": source.id,
@@ -258,7 +259,7 @@ class Population:
                 "disease": disease,
                 "health": target.health,
             })
-            print("Agent {} caught {} from Agent {} (health: {}).".format(
+            print("Agent {} caught {} passed by Agent {} (health: {}).".format(
                 target.id, disease, source.id, target.health
             ))
 

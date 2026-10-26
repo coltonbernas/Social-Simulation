@@ -8,8 +8,8 @@ def load_config():
         
 config = load_config()
 
-grid_rows = config["rows"]
-grid_cols = config["cols"]
+grid_rows = config["World Settings"]["rows"]
+grid_cols = config["World Settings"]["cols"]
 _legacy_building_count = config.get("building_count", config.get("fruit_count", 4))
 _default_building_counts = {
     "type_1_workplace": 2,
@@ -37,7 +37,7 @@ for _name, _count in building_counts.items():
     if not isinstance(_count, int) or isinstance(_count, bool) or _count < 0:
         raise ValueError("building_counts.{} must be a nonnegative integer".format(_name))
 building_count = sum(building_counts.values())
-agent_count = config["agent_count"]
+agent_count = config["Agent & Population"]["agent_count"]
 health_min = config.get("health_min", 0)
 health_max = config.get("health_max", 100)
 starting_health_min = config.get("starting_health_min", 50)

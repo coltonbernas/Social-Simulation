@@ -122,6 +122,7 @@ class Agent:
         self.health = random.randint(spawn_health_min, health_max) # done
         self.last_health_damage_cause = None # done
         self.diseases = set() #Mostly done need to add a little maybe; done
+        self.pending_diseases = set()
         #Gonna make this affect hard decisions and getting a job
         self.willpower = random.randint(0, 100) # done
         self.mental_health = 100 # done
@@ -216,14 +217,17 @@ class Agent:
         )
 
     def is_position_safe(self, x, y, world_obj, rows, cols):
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < rows and 0 <= ny < cols:
-                    if world_obj.grid[nx][ny] != 0:
-                            return False
-                    if world_obj.agent_grid[nx][ny] != 0:
-                        return False
+        # Ensure starting position (x, y) itself is inside bounds
+        if not (0 <= x < rows and 0 <= y < cols):
+            return False
+
+        # Check neighbor positions safely
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (0, 0)]:
+            nx, ny = x + dx, y + dy
+            # Only inspect cells that are strictly inside grid boundaries
+            if 0 <= nx < rows and 0 <= ny < cols:
+                if world_obj.grid[nx][ny] != 0:
+                    return False
         return True
 
     def scan_surroundings(self, world_obj, rows, cols):
@@ -257,42 +261,81 @@ class Agent:
         """Remember cells another agent reports as building-free."""
         self.known_empty.update(empty_locations)
 
-    def disease_transmission_probability(self, disease=None):
+    def _get_cfg_val(self, world_obj, category, key, fallback):
+        """Helper to read active dynamic parameters from world_obj.config."""
+        if not world_obj or not hasattr(world_obj, "config") or not world_obj.config:
+            return fallback
+        cfg = world_obj.config
+        # Check nested dictionary path first, then flat dictionary path
+        if category in cfg and isinstance(cfg[category], dict):
+            return cfg[category].get(key, fallback)
+        return cfg.get(key, fallback)
+
+    def disease_transmission_probability(self, world_obj=None, disease=None):
         """Chance of catching a disease from one infectious close contact."""
-        contagiousness = (disease or {}).get("contagiousness", base_disease_transmission)
-        # Lower health increases susceptibility; healthy agents retain a
-        # modest baseline risk. Clamp to a valid probability.
-        health_range = health_max - health_min
-        health_fraction = (self.health - health_min) / health_range if health_range else 1.0
+        base_trans = self._get_cfg_val(world_obj, "Health & Disease", "base_disease_transmission",
+                                       base_disease_transmission)
+        contagiousness = (disease or {}).get("contagiousness", base_trans)
+
+        h_min = self._get_cfg_val(world_obj, "Agent & Population", "health_min", health_min)
+        h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
+
+        health_range = h_max - h_min
+        health_fraction = (self.health - h_min) / health_range if health_range else 1.0
         susceptibility = 1.5 - health_fraction * 0.5
         return max(0.0, min(1.0, contagiousness * susceptibility))
 
-    def catch_disease(self, disease="common_cold", contagiousness=None):
-        """Try to acquire a disease; return True if this contact infects the agent."""
-        if disease in self.diseases:
+    def catch_disease(self, world_obj, disease="common_cold", contagiousness=None):
+        """Queue a disease to take effect on the next turn."""
+        if disease in self.diseases or disease in self.pending_diseases:
             return False
+
+        base_trans = self._get_cfg_val(world_obj, "Health & Disease", "base_disease_transmission",
+                                       base_disease_transmission)
         if contagiousness is None:
-            contagiousness = base_disease_transmission
-        if random.random() >= self.disease_transmission_probability({"contagiousness": contagiousness}):
+            contagiousness = base_trans
+
+        prob = self.disease_transmission_probability(world_obj, {"contagiousness": contagiousness})
+        if random.random() >= prob:
             return False
-        self.diseases.add(disease)
-        self.damage_health(disease_health_impact, "disease: {}".format(disease))
+
+        # Queue the disease to take effect at the end of the turn cycle
+        self.pending_diseases.add(disease)
         return True
 
-    def damage_health(self, amount, cause):
+    def damage_health(self, amount, cause, world_obj=None):
         """Reduce health and remember what caused the latest reduction."""
+        h_min = self._get_cfg_val(world_obj, "Agent & Population", "health_min", health_min)
         previous_health = self.health
-        self.health = max(health_min, self.health - amount)
+        self.health = max(h_min, self.health - amount)
         if self.health < previous_health:
             self.last_health_damage_cause = cause
 
     def update_health(self, world_obj=None):
-        """Apply health changes, including starvation and stressful events."""
-        self.hunger = max(0, self.hunger - hunger_drain_per_step)
-        if not self.diseases and random.random() < disease_chance_per_turn:
+        """Apply health changes, including starvation, dynamic disease damage, and stressful events."""
+        # 1. Apply dynamic hunger drain
+        hunger_drain = self._get_cfg_val(world_obj, "Grocery & Needs", "hunger_drain_per_step", hunger_drain_per_step)
+        self.hunger = max(0, self.hunger - hunger_drain)
+
+        # 2. Process pending disease infections queued during this turn
+        if self.pending_diseases:
+            disease_impact = self._get_cfg_val(world_obj, "Health & Disease", "disease_health_impact",
+                                               disease_health_impact)
+            for d in self.pending_diseases:
+                self.diseases.add(d)
+                self.damage_health(disease_impact, f"disease: {d}", world_obj)
+            self.pending_diseases.clear()
+
+        # 3. Dynamic natural disease chance
+        disease_chance = self._get_cfg_val(world_obj, "Health & Disease", "disease_chance_per_turn",
+                                           disease_chance_per_turn)
+        disease_impact = self._get_cfg_val(world_obj, "Health & Disease", "disease_health_impact",
+                                           disease_health_impact)
+
+        if not self.diseases and random.random() < disease_chance:
             disease = "common_cold"
             self.diseases.add(disease)
-            self.damage_health(disease_health_impact, "disease: {}".format(disease))
+            self.damage_health(disease_impact, f"disease: {disease}", world_obj)
             if world_obj is not None:
                 world_obj.disease_events.append({
                     "turn": world_obj.turnNo + 1,
@@ -301,20 +344,20 @@ class Agent:
                     "source": "natural",
                     "health": self.health,
                 })
-            print("Agent {} naturally contracted {} (health: {}).".format(
-                self.id, disease, self.health
-            ))
+
+        # 4. Apply disease damage
         if self.diseases:
             disease = sorted(self.diseases)[0]
-            self.damage_health(10, "disease: {}".format(disease))
+            self.damage_health(disease_impact, f"disease: {disease}", world_obj)
         else:
+            h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
             previous_health = self.health
-            self.health = min(health_max, self.health + 1)
+            self.health = min(h_max, self.health + 1)
             if self.health > previous_health:
                 self.last_health_damage_cause = None
 
         if self.hunger <= 0:
-            self.damage_health(10, "hunger")
+            self.damage_health(10, "hunger", world_obj)
 
         self.update_stressful_events()
 

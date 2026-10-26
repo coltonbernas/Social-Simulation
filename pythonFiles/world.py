@@ -1,27 +1,49 @@
+import json
 import random
+
 try:
     from .config import grid_rows, grid_cols, building_counts
 except ImportError:
     from config import grid_rows, grid_cols, building_counts
 
+
 class World:
-    def __init__(self, rows=grid_rows, cols=grid_cols, buildings=None):
-        self.rows = rows
-        self.cols = cols
-        self.grid = [[0 for _ in range(cols)] for _ in range(rows)]
-        self.agent_grid = [[0 for _ in range(cols)] for _ in range(rows)]
+    def __init__(self, config=None, rows=None, cols=None, buildings=None):
+        # 1. Load config dictionary from file if not explicitly supplied
+        if config is None:
+            try:
+                with open("config.json", "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                config = {}
+
+        self.config = config
+
+        # 2. Extract world grid parameters (supports nested dict or flat JSON fallback)
+        world_cfg = config.get("World Settings", config) if isinstance(config, dict) else {}
+        self.rows = rows if rows is not None else world_cfg.get("rows", grid_rows)
+        self.cols = cols if cols is not None else world_cfg.get("cols", grid_cols)
+
+        self.grid = [[0 for _ in range(self.cols)] for _ in range(self.rows)]
+        self.agent_grid = [[0 for _ in range(self.cols)] for _ in range(self.rows)]
+
+        # 3. Extract building counts parameter
         if buildings is None:
-            requested_counts = dict(building_counts)
+            # Check nested dictionary path, flat dict path, or fallback to config.py
+            raw_counts = config.get("Building Counts", config.get("building_counts", building_counts))
+            requested_counts = dict(raw_counts)
         else:
-            # Preserve the older World(buildings=N) constructor behavior.
+            # Preserve older World(buildings=N) constructor behavior
             names = tuple(building_counts)
             requested_counts = {name: 0 for name in names}
             for index in range(buildings):
                 name = names[index % len(names)]
                 requested_counts[name] += 1
+
         self.building_count = sum(requested_counts.values())
-        if self.building_count > rows * cols:
+        if self.building_count > self.rows * self.cols:
             raise ValueError("Total building count cannot exceed the number of grid cells")
+
         self.building_jobs = {}
         self.job_opening_versions = {}
         self.school_occupants = {}
@@ -30,6 +52,7 @@ class World:
         self.hospitals = set()
         self.hospital_occupants = {}
         self.houses = {}
+
         self.house_events = []
         self.hospital_events = []
         self.grocery_events = []
@@ -44,9 +67,9 @@ class World:
         self.birth_events = []
         self.money_transfer_events = []
         self.disease_events = []
+
         self.place_buildings(requested_counts)
         self.turnNo = 0
-
 
     @property
     def open_jobs(self):
@@ -89,9 +112,9 @@ class World:
         self.job_quit_events.append(event)
         print("Agent {} {}; the {} at ({}, {}) is open again. "
               "Agents previously rejected here may reapply.".format(
-                  former_holder.id, reason, former_holder.job,
-                  location[0], location[1]
-              ))
+            former_holder.id, reason, former_holder.job,
+            location[0], location[1]
+        ))
         return True
 
     def place_buildings(self, counts):
@@ -106,7 +129,9 @@ class World:
             "premium_house": 7,
         }
         for name, building_type in names_to_types.items():
-            requested_types.extend([building_type] * counts[name])
+            if name in counts:
+                requested_types.extend([building_type] * counts[name])
+
         locations = random.sample(
             [(row, col) for row in range(self.rows) for col in range(self.cols)],
             len(requested_types),

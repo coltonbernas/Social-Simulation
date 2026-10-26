@@ -1,34 +1,46 @@
 {
-  "rows": 100,
-  "cols": 100,
-  "building_counts": {
-    "type_1_workplace": 30,
-    "type_2_workplace": 15,
-    "school": 3,
-    "grocery_store": 3,
-    "hospital": 3,
-    "budget_house": 30,
-    "premium_house": 15
+  "World Settings": {
+    "rows": 20,
+    "cols": 20
   },
-  "agent_count": 50,
-  "health_min": 0,
-  "health_max": 100,
-  "starting_health_min": 50,
-  "base_disease_transmission": 0.20,
-  "disease_health_impact": 20,
-  "disease_chance_per_turn": 0.01,
-  "hunger_drain_per_step": 5,
-  "starting_wealth": 0,
-  "type_1_income_per_turn": 100,
-  "type_2_income_per_turn": 250,
-  "low_wealth_threshold": 1000,
-  "low_wealth_stress_turns": 10,
-  "grocery_hunger_threshold": 25,
-  "grocery_food_cost": 750,
-  "grocery_food_health_restore": 25,
-  "grocery_food_mental_restore": 25,
-  "mental_health_recovery_per_turn": 1,
-  "stress_mental_health_initial_drain": 5,
-  "stress_mental_health_sustained_drain": 2,
-  "hospital_stay_duration_turns": 3
+  "Building Counts": {
+    "type_1_workplace": 15,
+    "type_2_workplace": 5,
+    "school": 3,
+    "grocery_store": 5,
+    "hospital": 5,
+    "budget_house": 25,
+    "premium_house": 10
+  },
+  "Agent & Population": {
+    "agent_count": 25,
+    "starting_wealth": 0,
+    "starting_health_min": 50,
+    "health_min": 0,
+    "health_max": 100
+  },
+  "Health & Disease": {
+    "base_disease_transmission": 0.02,
+    "disease_health_impact": 1,
+    "disease_chance_per_turn": 0.001,
+    "hospital_stay_duration_turns": 3
+  },
+  "Economy & Jobs": {
+    "type_1_income_per_turn": 100,
+    "type_2_income_per_turn": 250,
+    "low_wealth_threshold": 1000,
+    "low_wealth_stress_turns": 10
+  },
+  "Grocery & Needs": {
+    "hunger_drain_per_step": 2,
+    "grocery_hunger_threshold": 40,
+    "grocery_food_cost": 200,
+    "grocery_food_health_restore": 70,
+    "grocery_food_mental_restore": 70
+  },
+  "Mental Health & Stress": {
+    "mental_health_recovery_per_turn": 1,
+    "stress_mental_health_initial_drain": 5,
+    "stress_mental_health_sustained_drain": 2
+  }
 }
