@@ -151,7 +151,7 @@ class Agent:
         self.religion = (
             religion if religion is not None
             else random_religion(self.ethnicity_percentages)
-        ) # done
+        ) # done kinda still gotta do stuff with it
         self.parent_ids = set(parent_ids or ()) # done
         self.children_ids = set() # done
         self.birth_turn = birth_turn # done
