@@ -9,7 +9,14 @@ except ImportError:
 
 
 class Population:
-    def __init__(self, world_obj, count=agent_count):
+    def __init__(self, world_obj, count=None):
+        # Read updated agent count dynamically from world_obj.config if count isn't explicitly passed
+        if count is None:
+            config = getattr(world_obj, "config", {})
+            # Look in nested "Agent & Population" category first, then top-level flat key
+            agent_cfg = config.get("Agent & Population", config) if isinstance(config, dict) else {}
+            count = agent_cfg.get("agent_count", config.get("agent_count", agent_count))
+
         self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
         self.all_agents = list(self.agents)
         self.next_agent_id = count

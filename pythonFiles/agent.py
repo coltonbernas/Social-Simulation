@@ -107,66 +107,79 @@ def random_religion(ethnicity_percentages):
 
 
 class Agent:
-    def __init__(self, agent_id, world_obj, rows=grid_rows, cols=grid_cols, age=None,
+    def __init__(self, agent_id, world_obj, rows=None, cols=None, age=None,
                  ethnicity=None, ethnicity_percentages=None, parent_ids=None,
                  birth_turn=None, religion=None):
-        self.id = agent_id+1 # done
-        self.name = "Agent {}".format(self.id) # done
-        self.gender = random.choice(("female", "male")) # done
-        self.age = random.randint(1, 30) if age is None else age # done
-        self.death_age = random.randint(80, 100) # done
-        self.intelligence = random_intelligence() # done
-        # Initial health uses its own range; health_min remains the simulation
-        # floor for later damage and recovery.
-        spawn_health_min = max(health_min, min(starting_health_min, health_max))
-        self.health = random.randint(spawn_health_min, health_max) # done
-        self.last_health_damage_cause = None # done
-        self.diseases = set() #Mostly done need to add a little maybe; done
+        # Dynamically fetch world dimensions from world_obj if not explicitly supplied
+        if rows is None:
+            rows = getattr(world_obj, "rows", grid_rows)
+        if cols is None:
+            cols = getattr(world_obj, "cols", grid_cols)
+
+        # Retrieve dynamic health and wealth values from world_obj.config if available
+        config = getattr(world_obj, "config", {})
+        agent_cfg = config.get("Agent & Population", config) if isinstance(config, dict) else {}
+
+        cfg_h_min = agent_cfg.get("health_min", health_min)
+        cfg_h_max = agent_cfg.get("health_max", health_max)
+        cfg_start_h_min = agent_cfg.get("starting_health_min", starting_health_min)
+        cfg_start_wealth = agent_cfg.get("starting_wealth", starting_wealth)
+
+        self.id = agent_id + 1
+        self.name = "Agent {}".format(self.id)
+        self.gender = random.choice(("female", "male"))
+        self.age = random.randint(1, 30) if age is None else age
+        self.death_age = random.randint(80, 100)
+        self.intelligence = random_intelligence()
+
+        # Calculate spawn health using dynamic config parameters
+        spawn_health_min = max(cfg_h_min, min(cfg_start_h_min, cfg_h_max))
+        self.health = random.randint(spawn_health_min, cfg_h_max)
+        self.last_health_damage_cause = None
+        self.diseases = set()
         self.pending_diseases = set()
-        #Gonna make this affect hard decisions and getting a job
-        self.willpower = random.randint(0, 100) # done
-        self.mental_health = 100 # done
-        self.wealth = starting_wealth # done
-        self.house = None #done
-        self.house_turns_since_payment = 0 #done
-        self.low_wealth_turns = 0 # done
-        self.job = None #done
-        self.employed_at = None #done
-        self.returning_to_job = False # done
-        self.hospitalized_at = None #done
-        self.hospital_stay_turns = 0 #done
-        self.hospital_visit_event = None #done
-        # Building coordinates map to the opening version last attempted.
-        self.applied_buildings = {} #done
-        self.hunger_max = 100 #done
-        self.hunger = self.hunger_max #done
-        self.active_stressful_events = set() #done
-        self.political_status = None #To do
-        self.birth_place = None #To do
-        self.birth_date = None #done
-        self.ethnicity = ethnicity or random.choice(ETHNICITY_TYPES) # done
-        self.ethnicity_percentages = ( # done
+
+        self.willpower = random.randint(0, 100)
+        self.mental_health = 100
+        self.wealth = cfg_start_wealth
+        self.house = None
+        self.house_turns_since_payment = 0
+        self.low_wealth_turns = 0
+        self.job = None
+        self.employed_at = None
+        self.returning_to_job = False
+        self.hospitalized_at = None
+        self.hospital_stay_turns = 0
+        self.hospital_visit_event = None
+        self.applied_buildings = {}
+        self.hunger_max = 100
+        self.hunger = self.hunger_max
+        self.active_stressful_events = set()
+        self.political_status = None
+        self.birth_place = None
+        self.birth_date = None
+        self.ethnicity = ethnicity or random.choice(ETHNICITY_TYPES)
+        self.ethnicity_percentages = (
             dict(ethnicity_percentages) if ethnicity_percentages is not None
             else {self.ethnicity: 100.0}
         )
         self.religion = (
             religion if religion is not None
             else random_religion(self.ethnicity_percentages)
-        ) # done kinda still gotta do stuff with it
-        self.parent_ids = set(parent_ids or ()) # done
-        self.children_ids = set() # done
-        self.birth_turn = birth_turn # done
+        )
+        self.parent_ids = set(parent_ids or ())
+        self.children_ids = set()
+        self.birth_turn = birth_turn
         self.immigration_status = None
-        #Maybe make this affect interviews
-        self.personality_type = random.choice(( # done can do extra
+        self.personality_type = random.choice((
             "introverted", "extroverted", "ambivert"
         ))
         self.inheritance = None
         self.genes = []
         self.education = None
-        self.school_completed = False # done
-        self.schooling_at = None # done
-        self.school_turns = 0 # done
+        self.school_completed = False
+        self.schooling_at = None
+        self.school_turns = 0
         self.marital_status = None
         self.morality = None
         self.empathy = None
@@ -178,18 +191,19 @@ class Agent:
         self.needs = {}
         self.confidence = None
 
-        self.pos_x, self.pos_y  = self.get_safe_spawn_pos(world_obj, rows, cols) # done
-        # Cells observed or reported to contain no building.
-        self.known_empty = set() # done
-        self.visited_positions = {(self.pos_x, self.pos_y)} # done
-        self.position_visits = {(self.pos_x, self.pos_y): 1} # done
-        self.previous_position = None # done
-        self.interacted_agents = [] # done
-        self.interaction_last_turn = {} # done
-        self.visible_agent_ids = set() # done
-        self.relationship_points = {} # done
-        self.dating_partner_id = None # done
-        self.dating_since_turn = None # done
+        # Safe spawn evaluation across full active grid space
+        self.pos_x, self.pos_y = self.get_safe_spawn_pos(world_obj, rows, cols)
+
+        self.known_empty = set()
+        self.visited_positions = {(self.pos_x, self.pos_y)}
+        self.position_visits = {(self.pos_x, self.pos_y): 1}
+        self.previous_position = None
+        self.interacted_agents = []
+        self.interaction_last_turn = {}
+        self.visible_agent_ids = set()
+        self.relationship_points = {}
+        self.dating_partner_id = None
+        self.dating_since_turn = None
 
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
@@ -553,7 +567,14 @@ class Agent:
         ))
         return True
 
-    def move(self, world_obj, rows=grid_rows, cols=grid_cols):
+    def move(self, world_obj, rows=None, cols=None):
+        """Move the agent toward active goals while dynamically respecting current world dimensions."""
+        # Dynamically pull grid dimensions from world_obj if not explicitly passed
+        if rows is None:
+            rows = getattr(world_obj, "rows", grid_rows)
+        if cols is None:
+            cols = getattr(world_obj, "cols", grid_cols)
+
         if self.hospitalized_at is not None:
             print("Agent {} is staying in the hospital for treatment.".format(self.id))
             return None
@@ -583,9 +604,9 @@ class Agent:
         job_targets = [
             location for location, job_holder in world_obj.building_jobs.items()
             if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
-            and self.applied_buildings.get(location)
-            != world_obj.job_opening_versions[location]
-            and job_holder is None
+               and self.applied_buildings.get(location)
+               != world_obj.job_opening_versions[location]
+               and job_holder is None
         ]
         visible_empty = self.scan_empty_surroundings(world_obj, rows, cols)
         self.known_empty.update(visible_empty)
@@ -684,9 +705,9 @@ class Agent:
             job_targets = [
                 location for location, job_holder in world_obj.building_jobs.items()
                 if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
-                and self.applied_buildings.get(location)
-                != world_obj.job_opening_versions[location]
-                and job_holder is None
+                   and self.applied_buildings.get(location)
+                   != world_obj.job_opening_versions[location]
+                   and job_holder is None
             ]
             if self.job == "Type 2 job":
                 return None
@@ -754,7 +775,7 @@ class Agent:
             progress_moves = [
                 move for move in fallback_moves
                 if abs(move_destinations[move][0] - target_x)
-                + abs(move_destinations[move][1] - target_y) < current_distance
+                   + abs(move_destinations[move][1] - target_y) < current_distance
             ]
             if progress_moves:
                 best_distance = min(
@@ -765,7 +786,7 @@ class Agent:
                 best_moves = [
                     move for move in progress_moves
                     if abs(move_destinations[move][0] - target_x)
-                    + abs(move_destinations[move][1] - target_y) == best_distance
+                       + abs(move_destinations[move][1] - target_y) == best_distance
                 ]
                 dx, dy = random.choice(best_moves)
             elif unexplored_moves:
@@ -796,14 +817,12 @@ class Agent:
             dx, dy = random.choice(least_visited_moves)
         elif blocked_moves:
             # Only attempt a blocked move if every available direction is occupied.
-            # This preserves collision-based information sharing without trapping agents
-            # beside a stationary type 2 employee when other routes are open.
             dx, dy = random.choice(blocked_moves)
         else:
             dx = dy = 0
 
-        next_x = max(0, min(rows-1, self.pos_x + dx))
-        next_y = max(0, min(cols-1, self.pos_y + dy))
+        next_x = max(0, min(rows - 1, self.pos_x + dx))
+        next_y = max(0, min(cols - 1, self.pos_y + dy))
         other_agent_id = world_obj.agent_grid[next_x][next_y]
         if (other_agent_id not in (0, self.id)
                 and world_obj.grid[next_x][next_y] not in (3, 4, 5, 6, 7)):
@@ -856,7 +875,7 @@ class Agent:
             world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
 
         print("Agent {} moved to ({}, {})".format(self.id, self.pos_x, self.pos_y))
-        
+
         building_type = world_obj.grid[self.pos_x][self.pos_y]
         if building_type and old_position != building_location:
             world_obj.building_entries.append({
