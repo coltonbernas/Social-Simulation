@@ -180,7 +180,7 @@ class Agent:
         self.school_completed = False
         self.schooling_at = None
         self.school_turns = 0
-        self.marital_status = None # done
+        self.marital_status = None # somewhat done
         self.morality = None
         self.empathy = random.random()
         self.resilience = random.random()
