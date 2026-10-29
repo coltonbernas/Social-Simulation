@@ -171,6 +171,8 @@ class Population:
 
         can_date_each_other = (
             not is_parent_child
+            and first.marital_status != "married"
+            and second.marital_status != "married"
             and
             first.dating_partner_id in (None, second.id)
             and second.dating_partner_id in (None, first.id)
@@ -326,6 +328,7 @@ class Population:
 
         for agent in self.agents:
             agent.visible_agent_ids = current_sightings[agent.id]
+        self._process_marriages(world_obj)
         self._process_births(world_obj)
         for agent in list(self.agents):
             if agent.health <= 0:
@@ -381,6 +384,45 @@ class Population:
                     or first.children_ids.intersection(second.children_ids)):
                 continue
             self.birth_child(world_obj, first, second)
+
+    def _process_marriages(self, world_obj):
+        """Marry dating couples after five turns if they can cover the wedding."""
+        turn = world_obj.turnNo + 1
+        agents_by_id = {agent.id: agent for agent in self.agents}
+        for first in self.agents:
+            partner_id = first.dating_partner_id
+            if (partner_id is None or first.id > partner_id
+                    or first.dating_since_turn is None
+                    or turn - first.dating_since_turn < 5):
+                continue
+            second = agents_by_id.get(partner_id)
+            if (second is None or second.dating_partner_id != first.id
+                    or first.marital_status == "married"
+                    or second.marital_status == "married"
+                    or first.wealth + second.wealth < 2000):
+                continue
+
+            remaining_cost = 2000
+            for agent in sorted((first, second), key=lambda item: item.id):
+                amount = min(agent.wealth, remaining_cost)
+                agent.wealth -= amount
+                remaining_cost -= amount
+
+            first.marital_status = second.marital_status = "married"
+            world_obj.relationship_events.append({
+                "turn": turn,
+                "first_id": first.id,
+                "second_id": second.id,
+                "first_name": first.name,
+                "second_name": second.name,
+                "points": first.relationship_points.get(second.id, 0),
+                "stage": "married",
+                "stage_changed": True,
+                "reason": "held a wedding costing $2,000",
+            })
+            print("{} and {} got married after dating for five turns; their wedding cost $2,000.".format(
+                first.name, second.name
+            ))
 
     def _remove_agent(self, agent, world_obj, cause):
         """Remove a dead agent and reopen any job they held."""
