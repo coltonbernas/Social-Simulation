@@ -2,8 +2,8 @@ import csv
 import json
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from theme import *
-from config_dialog import *
+from ui.theme import *
+from ui.config_dialog import *
  
 try:  # Support both ``python main.py`` and ``python -m pythonFiles.main``.
     from .world import World

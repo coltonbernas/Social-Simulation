@@ -3,7 +3,7 @@ import json
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from theme import *
+from ui.theme import *
 
 
 class ConfigDialog(tk.Toplevel):

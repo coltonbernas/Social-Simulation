@@ -59,7 +59,7 @@ if __name__ == "__main__":
         main()
     else:
         try:
-            from .popout import launch
+            from ui.popout import launch
         except ImportError:
-            from popout import launch
+            from ui.popout import launch
         launch()
