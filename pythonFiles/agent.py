@@ -155,8 +155,8 @@ class Agent:
         self.hunger_max = 100
         self.hunger = self.hunger_max
         self.active_stressful_events = set()
-        self.political_status = None
-        self.birth_place = None
+        self.political_status = None # to do
+        self.birth_place = None #to do
         self.birth_date = None
         self.ethnicity = ethnicity or random.choice(ETHNICITY_TYPES)
         self.ethnicity_percentages = (
@@ -183,7 +183,7 @@ class Agent:
         self.marital_status = None
         self.morality = None
         self.empathy = None
-        self.resilience = None
+        self.resilience = random.random()
         self.agreeableness = None
         self.openness = None
         self.implusiveness = None
@@ -434,12 +434,14 @@ class Agent:
             if event not in self.active_stressful_events:
                 # A new stressful event has an immediate impact.
                 self.mental_health = max(
-                    0, self.mental_health - stress_mental_health_initial_drain
+                    0, self.mental_health
+                    - stress_mental_health_initial_drain * (1 - self.resilience)
                 )
             else:
                 # The impact continues on every turn the event remains active.
                 self.mental_health = max(
-                    0, self.mental_health - stress_mental_health_sustained_drain
+                    0, self.mental_health
+                    - stress_mental_health_sustained_drain * (1 - self.resilience)
                 )
         if not current_events:
             self.mental_health = min(
@@ -497,7 +499,9 @@ class Agent:
             world_obj.houses[location].discard(self.id)
             self.house = None
             self.house_turns_since_payment = 0
-            self.mental_health = max(0, self.mental_health - 25)
+            self.mental_health = max(
+                0, self.mental_health - 25 * (1 - self.resilience)
+            )
             event = {"turn": world_obj.turnNo + 1, "agent_id": self.id,
                      "event": "evicted", "house_type": house_type,
                      "position": location, "amount": cost, "wealth": self.wealth,
