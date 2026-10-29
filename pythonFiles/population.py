@@ -228,6 +228,8 @@ class Population:
 
         if giver.wealth < amount:
             return None
+        if random.random() >= giver.empathy:
+            return None
         return giver, receiver, amount, reason
 
     @staticmethod

@@ -182,7 +182,7 @@ class Agent:
         self.school_turns = 0
         self.marital_status = None
         self.morality = None
-        self.empathy = None
+        self.empathy = random.random()
         self.resilience = random.random()
         self.agreeableness = None
         self.openness = None
