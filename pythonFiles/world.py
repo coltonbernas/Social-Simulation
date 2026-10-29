@@ -1,10 +1,14 @@
 import json
 import random
+import math
 
 try:
     from .config import grid_rows, grid_cols, building_counts
 except ImportError:
     from config import grid_rows, grid_cols, building_counts
+
+    REGION_SPLIT_ROWS = 2 #REGIONS VERTICALLY
+    REGION_SPLIT_COLS = 2 #REGIONES SIDE BY SIDE
 
 
 class World:
@@ -68,6 +72,7 @@ class World:
         self.money_transfer_events = []
         self.disease_events = []
 
+        self.build_regions(config.get("Regions", {}) if isinstance(config, dict) else {})
         self.place_buildings(requested_counts)
         self.turnNo = 0
 
@@ -117,6 +122,47 @@ class World:
         ))
         return True
 
+
+    def build_regions(self, region_cfg):
+        """Split the grid into blocks and attach economy multipliers to each."""
+        self.region_block_h = math.ceil(self.rows / REGION_SPLIT_ROWS)
+        self.region_block_w = math.ceil(self.cols / REGION_SPLIT_COLS)
+        configured = [(name, vals) for name, vals in region_cfg.items()
+                      if isinstance(vals, dict)]
+        self.regions = []
+        for index in range(REGION_SPLIT_ROWS * REGION_SPLIT_COLS):
+            block_row, block_col = divmod(index, REGION_SPLIT_COLS)
+            if index < len(configured):
+                name, vals = configured[index]
+            else:
+                name, vals = "Region {}".format(index + 1), {}
+            self.regions.append({
+                "id": index,
+                "name": name,
+                "row_start": block_row * self.region_block_h,
+                "row_end": min(self.rows, (block_row + 1) * self.region_block_h) - 1,
+                "col_start": block_col * self.region_block_w,
+                "col_end": min(self.cols, (block_col + 1) * self.region_block_w) - 1,
+                "wage_multiplier": vals.get("wage_multiplier", 1.0),
+                "cost_multiplier": vals.get("cost_of_living_multiplier", 1.0),
+            })
+        for region in self.regions:
+            print("Region {} '{}': rows {}-{}, cols {}-{}; wage x{}, cost of living x{}".format(
+                region["id"], region["name"], region["row_start"], region["row_end"],
+                region["col_start"], region["col_end"],
+                region["wage_multiplier"], region["cost_multiplier"]))
+
+    def region_of(self, row, col):
+        """Return the id of the region containing this grid cell."""
+        block_row = min(row // self.region_block_h, REGION_SPLIT_ROWS - 1)
+        block_col = min(col // self.region_block_w, REGION_SPLIT_COLS - 1)
+        return block_row * REGION_SPLIT_COLS + block_col
+
+    def region_cells(self, region):
+        return [(r, c)
+                for r in range(region["row_start"], region["row_end"] + 1)
+                for c in range(region["col_start"], region["col_end"] + 1)]
+
     def place_buildings(self, counts):
         requested_types = []
         names_to_types = {
@@ -132,11 +178,23 @@ class World:
             if name in counts:
                 requested_types.extend([building_type] * counts[name])
 
-        locations = random.sample(
-            [(row, col) for row in range(self.rows) for col in range(self.cols)],
-            len(requested_types),
-        )
-        for building_type, location in zip(requested_types, locations):
+        # Guarantee every region gets one Type 1 workplace and one budget house.
+        free_cells = {(r, c) for r in range(self.rows) for c in range(self.cols)}
+        placed = []
+        for region in self.regions:
+            cells = [cell for cell in self.region_cells(region) if cell in free_cells]
+            for wanted in (1, 6):
+                if wanted in requested_types and cells:
+                    requested_types.remove(wanted)
+                    location = random.choice(cells)
+                    cells.remove(location)
+                    free_cells.discard(location)
+                    placed.append((wanted, location))
+
+        locations = random.sample(sorted(free_cells), len(requested_types))
+        placed.extend(zip(requested_types, locations))
+
+        for building_type, location in placed:
             row, col = location
             self.grid[row][col] = building_type
             if building_type == 3:

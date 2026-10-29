@@ -706,6 +706,12 @@ class SimulationWindow:
  
         canvas.create_rectangle(ox, oy, ox + cell * cols, oy + cell * rows,
                                 fill="#0e1729", outline=BORDER)
+        # Tint each region so the areas are visible at a glance.
+        for region in self.world.regions:
+            canvas.create_rectangle(
+                ox + region["col_start"] * cell, oy + region["row_start"] * cell,
+                ox + (region["col_end"] + 1) * cell, oy + (region["row_end"] + 1) * cell,
+                fill=REGION_TINTS[region["id"] % len(REGION_TINTS)], outline="")
         if cell >= 12:  # grid lines only when zoomed in enough to be useful
             for i in range(cols + 1):
                 canvas.create_line(ox + i * cell, oy, ox + i * cell, oy + rows * cell, fill="#16223a")
@@ -724,6 +730,16 @@ class SimulationWindow:
                 canvas.create_text(x0 + cell / 2, y0 + cell / 2, text=label, fill=BG,
                                    font=(FONT, max(7, int(cell * 0.28)), "bold"))
  
+        # Region borders and names, drawn over the buildings so they stay visible.
+        for region in self.world.regions:
+            x0 = ox + region["col_start"] * cell
+            y0 = oy + region["row_start"] * cell
+            x1 = ox + (region["col_end"] + 1) * cell
+            y1 = oy + (region["row_end"] + 1) * cell
+            canvas.create_rectangle(x0, y0, x1, y1, outline=ACCENT, width=2)
+            canvas.create_text(x0 + 8, y0 + 6, anchor="nw", text=region["name"],
+                               fill="#ffffff",
+                               font=(FONT, max(9, min(16, int(cell * 0.9))), "bold"))
         selected = self._find_agent(self.selected_id) if self.selected_id else None
         by_cell = {}
         for agent in self.population.agents:

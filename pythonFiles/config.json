@@ -42,5 +42,19 @@
     "mental_health_recovery_per_turn": 1,
     "stress_mental_health_initial_drain": 5,
     "stress_mental_health_sustained_drain": 2
+  },
+  "Regions": {
+    "Northwest": {"wage_multiplier": 1.5, "cost_of living_multiplier": 1.4},
+    "Northeast": { "wage_multiplier": 1.0, "cost_of_living_multiplier": 1.0 },
+    "Southwest": { "wage_multiplier": 0.7, "cost_of_living_multiplier": 0.7 },
+    "Southeast": { "wage_multiplier": 1.2, "cost_of_living_multiplier": 1.1 }
+  },
+  "Economy & Jobs": {
+    "type_1_income_per_turn": 100,
+    "type_2_income_per_turn" : 250,
+    "budget_house_cost": 300,
+    "premium_house_cost": 700,
+    "low_wealth_threshold": 1000,
+    "low_wealth_stress_turns": 10
   }
 }
