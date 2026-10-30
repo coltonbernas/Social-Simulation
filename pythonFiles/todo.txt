@@ -4,3 +4,6 @@ Add all parameters for environment for real societal simulation
 Add generational inheritance of genes, conditions, etc (parents kids)
 Add Condition, chance, decision triangle model Masoud was talking abt (Colton can explain if needed)
 Add More complex Agents interactions with other agents and the environment
+Add family tree to agent properties
+Fix so they aren't having 85 kids + add gender to ui 
+Add more stats in UI
