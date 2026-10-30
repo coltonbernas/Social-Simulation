@@ -2,9 +2,11 @@ import random
 
 try:
     from .agent import Agent
+    from .migration import process_migration
     from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
 except ImportError:
     from agent import Agent
+    from migration import process_migration
     from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
 
 
@@ -64,6 +66,8 @@ class Population:
             parent_ids=(first_parent.id, second_parent.id),
             birth_turn=world_obj.turnNo + 1,
             religion=random.choice((first_parent.religion, second_parent.religion)),
+            region_id=random.choice((first_parent.region, second_parent.region)),
+
         )
         self.next_agent_id += 1
         self.agents.append(newborn)
@@ -330,11 +334,12 @@ class Population:
             agent.visible_agent_ids = current_sightings[agent.id]
         self._process_marriages(world_obj)
         self._process_births(world_obj)
+        process_migration(self, world_obj)
         for agent in list(self.agents):
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
                 continue
-            agent.earn_income()
+            agent.earn_income(world_obj)
             agent.update_health(world_obj)
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
@@ -348,11 +353,13 @@ class Population:
         """Transfer grocery money when young children are hungry and parents can cover it."""
         turn = world_obj.turnNo + 1
         for child in self.agents:
+            threshold = child._get_cfg_val(world_obj, "Grocery & Needs",
+                                           "grocery_hunger_threshold", grocery_hunger_threshold)
             if (not child.parent_ids or child.birth_turn is None
                     or turn - child.birth_turn > 10
-                    or child.hunger >= grocery_hunger_threshold):
+                    or child.hunger >= threshold):
                 continue
-            shortfall = max(0, grocery_food_cost - child.wealth)
+            shortfall = max(0, world_obj.food_cost(child.region) - child.wealth)
             parents = [parent for parent in self.agents if parent.id in child.parent_ids]
             if shortfall == 0 or sum(parent.wealth for parent in parents) < shortfall:
                 continue

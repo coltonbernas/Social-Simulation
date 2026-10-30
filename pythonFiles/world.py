@@ -3,12 +3,16 @@ import random
 import math
 
 try:
-    from .config import grid_rows, grid_cols, building_counts
+    from .config import (grid_rows, grid_cols, building_counts,
+                         type_1_income_per_turn, type_2_income_per_turn,
+                         grocery_food_cost)
 except ImportError:
-    from config import grid_rows, grid_cols, building_counts
+    from config import (grid_rows, grid_cols, building_counts,
+                        type_1_income_per_turn, type_2_income_per_turn,
+                        grocery_food_cost)
 
-    REGION_SPLIT_ROWS = 2 #REGIONS VERTICALLY
-    REGION_SPLIT_COLS = 2 #REGIONES SIDE BY SIDE
+REGION_SPLIT_ROWS = 2 #REGIONS VERTICALLY
+REGION_SPLIT_COLS = 2 #REGIONES SIDE BY SIDE
 
 
 class World:
@@ -71,6 +75,7 @@ class World:
         self.birth_events = []
         self.money_transfer_events = []
         self.disease_events = []
+        self.migration_events = []
 
         self.build_regions(config.get("Regions", {}) if isinstance(config, dict) else {})
         self.place_buildings(requested_counts)
@@ -99,7 +104,7 @@ class World:
         )
 
     def has_grocery_activity(self, agents):
-        return any(agent.can_buy_food() for agent in agents)
+        return any(agent.can_buy_food(self) for agent in agents)
 
     def reopen_job(self, location, former_holder, reason="left the job"):
         """Vacate a job and notify agents that its opening is available again."""
@@ -122,9 +127,8 @@ class World:
         ))
         return True
 
-
     def build_regions(self, region_cfg):
-        """Split the grid into blocks and attach economy multipliers to each."""
+        """Split the grid into blocks; each block is a region with its own economy."""
         self.region_block_h = math.ceil(self.rows / REGION_SPLIT_ROWS)
         self.region_block_w = math.ceil(self.cols / REGION_SPLIT_COLS)
         configured = [(name, vals) for name, vals in region_cfg.items()
@@ -139,16 +143,31 @@ class World:
             self.regions.append({
                 "id": index,
                 "name": name,
+                "country": vals.get("country", "Country 1"),
+                "block_row": block_row,
+                "block_col": block_col,
                 "row_start": block_row * self.region_block_h,
                 "row_end": min(self.rows, (block_row + 1) * self.region_block_h) - 1,
                 "col_start": block_col * self.region_block_w,
                 "col_end": min(self.cols, (block_col + 1) * self.region_block_w) - 1,
                 "wage_multiplier": vals.get("wage_multiplier", 1.0),
                 "cost_multiplier": vals.get("cost_of_living_multiplier", 1.0),
+                # Live values, refreshed by update_region_stats() every turn.
+                "housing_price_factor": 1.0,
+                "population": 0,
+                "avg_wealth": 0.0,
+                "employed": 0,
+                "job_seekers": 0,
+                "open_jobs": 0,
+                "house_count": 0,
+                "economy_score": 0.5,
+                "immigrants": 0,
+                "emigrants": 0,
             })
         for region in self.regions:
-            print("Region {} '{}': rows {}-{}, cols {}-{}; wage x{}, cost of living x{}".format(
-                region["id"], region["name"], region["row_start"], region["row_end"],
+            print("Region {} '{}' ({}): rows {}-{}, cols {}-{}; wage x{}, cost of living x{}".format(
+                region["id"], region["name"], region["country"],
+                region["row_start"], region["row_end"],
                 region["col_start"], region["col_end"],
                 region["wage_multiplier"], region["cost_multiplier"]))
 
@@ -210,3 +229,108 @@ class World:
             else:
                 self.building_jobs[location] = None
                 self.job_opening_versions[location] = 0
+
+    def region_distance(self, first_id, second_id):
+        """Distance between two regions, in region blocks."""
+        first, second = self.regions[first_id], self.regions[second_id]
+        return (abs(first["block_row"] - second["block_row"])
+                + abs(first["block_col"] - second["block_col"]))
+
+    def same_country(self, first_id, second_id):
+        return self.regions[first_id]["country"] == self.regions[second_id]["country"]
+
+    def update_region_stats(self, agents, reprice=True):
+        """Refresh every region's statistics; optionally move housing prices toward demand."""
+        min_age = self._setting("Migration", "min_age", 18)
+        sensitivity = self._setting("Regional Economy", "price_sensitivity", 0.5)
+        baseline = self._setting("Regional Economy", "baseline_people_per_house", 0.5)
+        smoothing = self._setting("Regional Economy", "price_smoothing", 0.3)
+        floor = self._setting("Regional Economy", "price_floor", 0.6)
+        ceiling = self._setting("Regional Economy", "price_ceiling", 2.5)
+        w_wage = self._setting("Regional Economy", "wage_weight", 0.4)
+        w_jobs = self._setting("Regional Economy", "job_weight", 0.4)
+        w_wealth = self._setting("Regional Economy", "wealth_weight", 0.2)
+        wealth_ref = max(1, self._setting("Regional Economy", "wealth_reference", 1000))
+        weight_total = (w_wage + w_jobs + w_wealth) or 1.0
+
+        residents = {region["id"]: [] for region in self.regions}
+        for agent in agents:
+            residents[agent.region].append(agent)
+        house_counts = dict.fromkeys(residents, 0)
+        for location in self.houses:
+            house_counts[self.region_of(*location)] += 1
+        open_jobs = dict.fromkeys(residents, 0)
+        for location, holder in self.building_jobs.items():
+            if holder is None:
+                open_jobs[self.region_of(*location)] += 1
+
+        for region in self.regions:
+            rid = region["id"]
+            people = residents[rid]
+            adults = [a for a in people if a.age >= min_age]
+            count = len(people)
+            region["population"] = count
+            region["avg_wealth"] = sum(a.wealth for a in people) / count if count else 0.0
+            region["employed"] = sum(1 for a in people if a.job)
+            region["job_seekers"] = sum(1 for a in adults if not a.job)
+            region["open_jobs"] = open_jobs[rid]
+            region["house_count"] = house_counts[rid]
+
+            if reprice:
+                # Housing demand: more people per house building pushes prices up.
+                demand = count / max(1, house_counts[rid])
+                target = 1.0 + sensitivity * (demand - baseline)
+                target = max(floor, min(ceiling, target))
+                region["housing_price_factor"] += smoothing * (
+                    target - region["housing_price_factor"])
+
+            real_wage = region["wage_multiplier"] / (
+                region["cost_multiplier"] * region["housing_price_factor"])
+            wage_score = max(0.0, min(1.0, real_wage / 1.5))
+            job_score = region["open_jobs"] / (region["open_jobs"] + region["job_seekers"] + 1.0)
+            wealth_score = region["avg_wealth"] / (region["avg_wealth"] + wealth_ref)
+            region["economy_score"] = (
+                w_wage * wage_score + w_jobs * job_score + w_wealth * wealth_score
+            ) / weight_total
+
+    def _setting(self, category, key, fallback):
+        """Read a value from the nested config.json, falling back to config.py."""
+        section = self.config.get(category, {}) if isinstance(self.config, dict) else {}
+        if isinstance(section, dict) and key in section:
+            return section[key]
+        return self.config.get(key, fallback)
+
+    def income_for(self, job, region_id):
+        if job == "Type 1 job":
+            base = self._setting("Economy & Jobs", "type_1_income_per_turn", type_1_income_per_turn)
+        elif job == "Type 2 job":
+            base = self._setting("Economy & Jobs", "type_2_income_per_turn", type_2_income_per_turn)
+        else:
+            return 0
+        return int(round(base * self.regions[region_id]["wage_multiplier"]))
+
+    def house_cost(self, house_type, region_id):
+        key = "budget_house_cost" if house_type == 6 else "premium_house_cost"
+        base = self._setting("Economy & Jobs", key, 300 if house_type == 6 else 700)
+        region = self.regions[region_id]
+        return int(round(base * region["cost_multiplier"]
+                         * region.get("housing_price_factor", 1.0)))
+
+    def food_cost(self, region_id):
+        base = self._setting("Grocery & Needs", "grocery_food_cost", grocery_food_cost)
+        return int(round(base * self.regions[region_id]["cost_multiplier"]))
+
+    def update_housing_prices(self, agents):
+        """More people per house than average -> higher housing prices in that region."""
+        sensitivity = self._setting("Migration", "housing_price_sensitivity", 0.3)
+        people = [0] * len(self.regions)
+        houses = [0] * len(self.regions)
+        for agent in agents:
+            people[agent.region] += 1
+        for location in self.houses:
+            houses[self.region_of(*location)] += 1
+        overall = sum(people) / max(1, sum(houses))
+        for region in self.regions:
+            density = people[region["id"]] / max(1, houses[region["id"]])
+            ratio = density / overall if overall else 1.0
+            region["housing_price_factor"] = max(0.5, min(2.0, 1 + sensitivity * (ratio - 1)))

@@ -192,6 +192,16 @@ class SimulationWindow:
             spark.pack(fill="x")
             spark.bind("<Configure>", lambda _e: self.draw_sparklines())
             self.sparks[key] = (spark, color)
+        tk.Label(tab, text="Regions", bg=BG, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(10, 0))
+        self.region_tree = ttk.Treeview(
+            tab, columns=("name", "pop", "wealth", "jobs", "rent"),
+            show="headings", height=4, selectmode="none")
+        for col, title, width in (("name", "Region", 90), ("pop", "Pop", 40),
+                                  ("wealth", "Avg $", 70), ("jobs", "Open jobs", 70),
+                                  ("rent", "Rent x", 55)):
+            self.region_tree.heading(col, text=title)
+            self.region_tree.column(col, width=width, anchor="center", stretch=False)
+        self.region_tree.pack(fill="x")
  
     def _build_agents(self, tab):
         self.tree = ttk.Treeview(tab, columns=("id", "age", "hp", "wealth", "status"),
@@ -513,6 +523,7 @@ class SimulationWindow:
         self.turn_label.configure(text="Turn {}  ·  {} agents alive{}".format(
             self.world.turnNo, s["n"], "  ·  FINISHED" if self.final_reported else ""))
         self.draw_sparklines()
+        self.refresh_region_table()
         self.refresh_agent_table()
         self.refresh_agent_detail()
  
@@ -533,6 +544,19 @@ class SimulationWindow:
             spark.create_line(*points, fill=color, width=2)
             spark.create_text(w - 6, 8, anchor="ne", fill=TEXT, font=(FONT, 8, "bold"),
                               text="{:,.0f}".format(data[-1]))
+
+    def refresh_region_table(self):
+        self.region_tree.delete(*self.region_tree.get_children())
+        for region in self.world.regions:
+            members = [a for a in self.population.agents if a.region == region["id"]]
+            n = len(members)
+            avg_wealth = sum(a.wealth for a in members) / n if n else 0
+            open_jobs = sum(
+                1 for loc, holder in self.world.building_jobs.items()
+                if holder is None and self.world.region_of(*loc) == region["id"])
+            self.region_tree.insert("", "end", values=(
+                region["name"], n, "${:,.0f}".format(avg_wealth), open_jobs,
+                "{:.2f}".format(region.get("housing_price_factor", 1.0))))
  
     def refresh_agent_table(self):
         self._tree_guard = True  # stop our own updates triggering a selection event
@@ -587,6 +611,9 @@ class SimulationWindow:
             ("Job", agent.job or "unemployed"),
             ("Home", "({}, {})".format(*agent.house) if agent.house else "homeless"),
             ("Position", "({}, {})".format(agent.pos_x, agent.pos_y)),
+            ("Region", self.world.regions[agent.region]["name"]),
+            ("Born in", self.world.regions[agent.birth_region]["name"]),
+            ("Has migrated", "yes" if agent.has_migrated else "no"),
             ("Diseases", ", ".join(sorted(agent.diseases)) or "none"),
             ("Intelligence / willpower", "{} / {}".format(agent.intelligence, agent.willpower)),
             ("Dating", "Agent {}".format(agent.dating_partner_id)

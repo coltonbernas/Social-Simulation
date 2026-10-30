@@ -109,7 +109,7 @@ def random_religion(ethnicity_percentages):
 class Agent:
     def __init__(self, agent_id, world_obj, rows=None, cols=None, age=None,
                  ethnicity=None, ethnicity_percentages=None, parent_ids=None,
-                 birth_turn=None, religion=None):
+                 birth_turn=None, religion=None , region_id=None):
         # Dynamically fetch world dimensions from world_obj if not explicitly supplied
         if rows is None:
             rows = getattr(world_obj, "rows", grid_rows)
@@ -170,7 +170,8 @@ class Agent:
         self.parent_ids = set(parent_ids or ())
         self.children_ids = set()
         self.birth_turn = birth_turn
-        self.immigration_status = None
+        self.has_migrated = False
+        self.migration_history = []   # one dict per move: turn, from/to region, cost, wealth_after
         self.personality_type = random.choice((
             "introverted", "extroverted", "ambivert"
         ))
@@ -192,7 +193,10 @@ class Agent:
         self.confidence = None
 
         # Safe spawn evaluation across full active grid space
-        self.pos_x, self.pos_y = self.get_safe_spawn_pos(world_obj, rows, cols)
+        self.pos_x, self.pos_y = self.get_safe_spawn_pos(world_obj, rows, cols, region_id)
+        # birth_region never changes; region is where the agent lives now.
+        self.birth_region = world_obj.region_of(self.pos_x, self.pos_y)
+        self.region = self.birth_region
 
         self.known_empty = set()
         self.visited_positions = {(self.pos_x, self.pos_y)}
@@ -205,6 +209,7 @@ class Agent:
         self.dating_partner_id = None
         self.dating_since_turn = None
 
+
         world_obj.agent_grid[self.pos_x][self.pos_y] = self.id
         print("Agent {} spawned at ({},{}); age: {}; natural death age: {}; "
               "intelligence: {}; willpower: {}; personality: {}; gender: {}; "
@@ -214,21 +219,23 @@ class Agent:
             self.ethnicity, self.religion
         ))
 
-    def get_safe_spawn_pos(self, world_obj, rows, cols):
-        attempts = 0
-        max_attempts = 1000
+    def get_safe_spawn_pos(self, world_obj, rows, cols, region_id=None):
+        if region_id is None:
+            x_min, x_max, y_min, y_max = 0, rows - 1, 0, cols - 1
+        else:
+            region = world_obj.regions[region_id]
+            x_min, x_max = region["row_start"], region["row_end"]
+            y_min, y_max = region["col_start"], region["col_end"]
 
-        while attempts < max_attempts:
-            x = random.randint(0, rows-1)
-            y = random.randint(0, cols-1)
-
+        for _ in range(1000):
+            x = random.randint(x_min, x_max)
+            y = random.randint(y_min, y_max)
             if self.is_position_safe(x, y, world_obj, rows, cols):
                 return x, y
-            attempts += 1
+        raise RuntimeError("Could not find a valid spawn position")
 
-        raise RuntimeError(
-            "Could not find a valid spawn position"
-        )
+    def in_my_region(self, world_obj, location):
+        return world_obj.region_of(location[0], location[1]) == self.region
 
     def is_position_safe(self, x, y, world_obj, rows, cols):
         # Ensure starting position (x, y) itself is inside bounds
@@ -375,12 +382,9 @@ class Agent:
 
         self.update_stressful_events()
 
-    def earn_income(self):
-        """Add this turn's wages for the agent's current job."""
-        if self.job == "Type 1 job":
-            self.wealth += type_1_income_per_turn
-        elif self.job == "Type 2 job":
-            self.wealth += type_2_income_per_turn
+    def earn_income(self, world_obj):
+        """Add this turn's wages, scaled by the home region's wage multiplier."""
+        self.wealth += world_obj.income_for(self.job, self.region)
 
     def advance_school(self, world_obj):
         """Count attendance turns and award intelligence after five turns."""
@@ -408,9 +412,10 @@ class Agent:
         available_jobs = [
             location for location, holder in world_obj.building_jobs.items()
             if holder is None
-            and self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
-            and self.applied_buildings.get(location)
-            != world_obj.job_opening_versions[location]
+               and self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
+               and self.applied_buildings.get(location)
+               != world_obj.job_opening_versions[location]
+               and self.in_my_region(world_obj, location)
         ]
         school_nearby = any(
             max(abs(location[0] - self.pos_x), abs(location[1] - self.pos_y)) <= 1
@@ -449,15 +454,20 @@ class Agent:
             )
         self.active_stressful_events = current_events
 
-    def can_buy_food(self):
-        return self.wealth >= grocery_food_cost and self.hunger < grocery_hunger_threshold
+    def can_buy_food(self, world_obj):
+        cost = world_obj.food_cost(self.region)
+        threshold = self._get_cfg_val(world_obj, "Grocery & Needs",
+                                      "grocery_hunger_threshold", grocery_hunger_threshold)
+        return self.wealth >= cost and self.hunger < threshold
 
     def buy_house(self, world_obj, location):
         """Purchase an available house by paying its four-turn rent upfront."""
         house_type = world_obj.grid[location[0]][location[1]]
         if self.house is not None or house_type not in (6, 7):
             return False
-        cost = 300 if house_type == 6 else 700
+        if not self.in_my_region(world_obj, location):
+            return False
+        cost = world_obj.house_cost(house_type, self.region)
         if self.wealth < cost:
             return False
         self.wealth -= cost
@@ -483,7 +493,7 @@ class Agent:
         self.house_turns_since_payment += 1
         if self.house_turns_since_payment < 4:
             return
-        cost = 300 if house_type == 6 else 700
+        cost = world_obj.house_cost(house_type, world_obj.region_of(*self.house))
         if self.wealth >= cost:
             self.wealth -= cost
             self.house_turns_since_payment = 0
@@ -513,23 +523,25 @@ class Agent:
 
     def buy_food(self, world_obj, location):
         """Buy food at a grocery store and restore hunger, health, and mood."""
-        if location not in world_obj.grocery_stores or not self.can_buy_food():
-            return False
-        if self.wealth < grocery_food_cost:
-            print("Agent {} cannot afford food at the grocery store (cost: ${:,}; wealth: ${:,}).".format(
-                self.id, grocery_food_cost, self.wealth
-            ))
+        if location not in world_obj.grocery_stores or not self.can_buy_food(world_obj):
             return False
 
-        self.wealth -= grocery_food_cost
+        cost = world_obj.food_cost(self.region)
+        h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
+        health_restore = self._get_cfg_val(world_obj, "Grocery & Needs",
+                                           "grocery_food_health_restore", grocery_food_health_restore)
+        mental_restore = self._get_cfg_val(world_obj, "Grocery & Needs",
+                                           "grocery_food_mental_restore", grocery_food_mental_restore)
+
+        self.wealth -= cost
         self.hunger = self.hunger_max
-        self.health = min(health_max, self.health + grocery_food_health_restore)
-        self.mental_health = min(100, self.mental_health + grocery_food_mental_restore)
+        self.health = min(h_max, self.health + health_restore)
+        self.mental_health = min(100, self.mental_health + mental_restore)
         event = {
             "turn": world_obj.turnNo + 1,
             "agent_id": self.id,
             "position": location,
-            "cost": grocery_food_cost,
+            "cost": cost,
             "wealth": self.wealth,
             "health": self.health,
             "mental_health": self.mental_health,
@@ -539,8 +551,7 @@ class Agent:
         if self.job == "Type 2 job":
             self.returning_to_job = True
         print("Agent {} bought food for ${:,} at the grocery store; hunger {}, health {}, mental health {}, wealth ${:,}.".format(
-            self.id, grocery_food_cost, self.hunger, self.health,
-            self.mental_health, self.wealth
+            self.id, cost, self.hunger, self.health, self.mental_health, self.wealth
         ))
         return True
 
@@ -582,7 +593,7 @@ class Agent:
         if self.hospitalized_at is not None:
             print("Agent {} is staying in the hospital for treatment.".format(self.id))
             return None
-        if (self.job == "Type 2 job" and not self.can_buy_food()
+        if (self.job == "Type 2 job" and not self.can_buy_food(world_obj)
                 and not self.diseases
                 and not self.returning_to_job):
             print("Agent {} is staying at their type 2 job.".format(self.id))
@@ -601,7 +612,7 @@ class Agent:
 
         # A resident stays home unless a health or food need sends them out.
         if (self.house is not None and (self.pos_x, self.pos_y) == self.house
-                and not self.diseases and not self.can_buy_food()):
+                and not self.diseases and not self.can_buy_food(world_obj)):
             return None
 
         visible_buildings = self.scan_surroundings(world_obj, rows, cols)
@@ -611,6 +622,7 @@ class Agent:
                and self.applied_buildings.get(location)
                != world_obj.job_opening_versions[location]
                and job_holder is None
+               and self.in_my_region(world_obj, location)
         ]
         visible_empty = self.scan_empty_surroundings(world_obj, rows, cols)
         self.known_empty.update(visible_empty)
@@ -628,7 +640,7 @@ class Agent:
             )
 
         grocery_target = None
-        if self.can_buy_food():
+        if self.can_buy_food(world_obj):
             grocery_target = min(
                 world_obj.grocery_stores,
                 key=lambda location: (
@@ -659,7 +671,9 @@ class Agent:
         elif not self.diseases:
             affordable_houses = [
                 location for location in world_obj.houses
-                if self.wealth >= (300 if world_obj.grid[location[0]][location[1]] == 6 else 700)
+                if self.in_my_region(world_obj, location)
+                   and self.wealth >= world_obj.house_cost(
+                    world_obj.grid[location[0]][location[1]], self.region)
             ]
             house_target = min(
                 affordable_houses,
@@ -712,6 +726,7 @@ class Agent:
                    and self.applied_buildings.get(location)
                    != world_obj.job_opening_versions[location]
                    and job_holder is None
+                   and self.in_my_region(world_obj, location)
             ]
             if self.job == "Type 2 job":
                 return None
@@ -947,6 +962,8 @@ class Agent:
     def apply_for_job(self, world_obj, building_type, building_location):
         """Apply once per opening using intelligence, willpower and health."""
         if not self.can_apply_for_type(building_type):
+            return False
+        if not self.in_my_region(world_obj, building_location):
             return False
         opening_version = world_obj.job_opening_versions[building_location]
         if self.applied_buildings.get(building_location) == opening_version:
