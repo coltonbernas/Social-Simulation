@@ -70,6 +70,9 @@ class World:
 
         self.place_buildings(requested_counts)
         self.turnNo = 0
+        self.time_step_days = 365.25
+        self.duration_days = None
+        self.elapsed_days = 0.0
 
     @property
     def open_jobs(self):

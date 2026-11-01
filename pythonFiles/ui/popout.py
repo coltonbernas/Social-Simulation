@@ -13,6 +13,15 @@ except ImportError:
     from world import World
     from population import Population
     from config import building_names
+
+TIME_INTERVALS = {
+    "Day": 1,
+    "Week": 7,
+    "Month": 30,
+    "3 Months": 90,
+    "6 Months": 180,
+    "1 Year": 365.25,
+}
  
 
  
@@ -60,6 +69,9 @@ class SimulationWindow:
         self._drag = None
         self._moved = False
         self._tree_guard = False
+        self.duration_amount = tk.StringVar(value="")
+        self.duration_unit = tk.StringVar(value="1 Year")
+        self.step_unit = tk.StringVar(value="1 Year")
  
         self._setup_style()
         self._build_toolbar()
@@ -116,6 +128,21 @@ class SimulationWindow:
         ttk.Button(bar, text="End", command=self.end_simulation).pack(side="right")
         ttk.Button(bar, text="Export", command=self.export_agents).pack(side="right", padx=6)
         ttk.Button(bar, text="Reset", command=self.reset).pack(side="right")
+
+        time_bar = ttk.Frame(self.root, padding=(10, 0, 10, 8))
+        time_bar.pack(fill="x")
+        ttk.Label(time_bar, text="Simulation duration (blank = as long as possible)",
+                  style="Muted.TLabel").pack(
+            side="left", padx=(0, 6))
+        ttk.Entry(time_bar, textvariable=self.duration_amount, width=6).pack(side="left")
+        ttk.Combobox(time_bar, textvariable=self.duration_unit,
+                     values=tuple(TIME_INTERVALS), state="readonly", width=11).pack(
+                         side="left", padx=(4, 18))
+        ttk.Label(time_bar, text="Step interval", style="Muted.TLabel").pack(
+            side="left", padx=(0, 6))
+        ttk.Combobox(time_bar, textvariable=self.step_unit,
+                     values=tuple(TIME_INTERVALS), state="readonly", width=11).pack(
+                         side="left")
  
     def _build_body(self):
         body = tk.PanedWindow(self.root, orient="horizontal", bg=BG, bd=0, sashwidth=6)
@@ -260,6 +287,7 @@ class SimulationWindow:
             self.world = World()
 
         self.population = Population(world_obj=self.world)
+        self._apply_time_controls(show_error=False)
         self.buildings = [
             (r, c, self.world.grid[r][c])
             for r in range(self.world.rows)
@@ -286,12 +314,39 @@ class SimulationWindow:
         self.root.destroy()
  
     def _finished(self):
-        return self.final_reported or not self.population.agents
+        return (self.final_reported or not self.population.agents
+                or self._duration_complete())
+
+    def _duration_complete(self):
+        return (self.world is not None and self.world.duration_days is not None
+                and self.world.elapsed_days >= self.world.duration_days)
+
+    def _apply_time_controls(self, show_error=True):
+        try:
+            duration_text = self.duration_amount.get().strip()
+            if duration_text:
+                amount = float(duration_text)
+                if amount <= 0:
+                    raise ValueError
+                duration_days = amount * TIME_INTERVALS[self.duration_unit.get()]
+            else:
+                duration_days = None
+            step_days = TIME_INTERVALS[self.step_unit.get()]
+        except (ValueError, KeyError):
+            if show_error:
+                messagebox.showerror(
+                    "Invalid simulation time",
+                    "Enter a positive duration or leave it blank, then choose valid time units.",
+                )
+            return False
+        self.world.duration_days = duration_days
+        self.world.time_step_days = step_days
+        return True
  
     def toggle_running(self):
         if self.running:
             self.stop()
-        elif not self._finished():
+        elif self._apply_time_controls() and not self._finished():
             self.running = True
             self.start_button.configure(text="⏸  Pause")
             self._schedule_step()
@@ -317,6 +372,8 @@ class SimulationWindow:
         except ValueError:
             self._log("Batch size must be a whole number greater than zero.")
             return
+        if not self._apply_time_controls():
+            return
         self.stop()
         self.batch_remaining = count
         self.batch_start = self.world.turnNo + 1
@@ -326,7 +383,7 @@ class SimulationWindow:
  
     def step_once(self):
         self.stop()
-        if not self._finished():
+        if self._apply_time_controls() and not self._finished():
             self._advance()
  
     def _advance(self):
@@ -338,7 +395,14 @@ class SimulationWindow:
             return
         print("Turn {}:".format(self.world.turnNo + 1))
         before = self._event_counts()
+        configured_step_days = self.world.time_step_days
+        if self.world.duration_days is not None:
+            self.world.time_step_days = min(
+                configured_step_days,
+                self.world.duration_days - self.world.elapsed_days,
+            )
         self.population.step_agents(self.world)
+        self.world.time_step_days = configured_step_days
         print()
         self._log_new_events(before)
         self._record_history()
@@ -355,11 +419,21 @@ class SimulationWindow:
                 self.batch_remaining = 0
                 self.stop()
                 if self._finished():
-                    self._report_finished()
+                    reason = (
+                        "Selected simulation time span complete."
+                        if self._duration_complete()
+                        else None
+                    )
+                    self._report_finished(reason)
                 return
         if self._finished():
             self.stop()
-            self._report_finished()
+            reason = (
+                "Selected simulation time span complete."
+                if self._duration_complete()
+                else None
+            )
+            self._report_finished(reason)
         elif self.running:
             self._schedule_step()
  

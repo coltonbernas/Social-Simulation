@@ -275,12 +275,15 @@ class Population:
             ))
 
     def step_agents(self, world_obj):
-        # One simulation turn represents one year of aging.
+        # Age advances by the selected calendar interval; survival remains tied
+        # to each agent's natural death age, which is measured in years.
+        age_increment = getattr(world_obj, "time_step_days", 365.25) / 365.25
         for agent in list(self.agents):
+            previous_age = agent.age
             if agent.age < agent.death_age:
-                agent.age += 1
+                agent.age = min(agent.death_age, agent.age + age_increment)
             if (agent.parent_ids and agent.birth_turn is not None
-                    and agent.age == 10):
+                    and previous_age < 10 <= agent.age):
                 if random.random() < 0.20:
                     previous_religion = agent.religion
                     agent.religion = "Unaffiliated"
@@ -343,6 +346,7 @@ class Population:
                 agent.advance_school(world_obj)
                 agent.advance_house_stay(world_obj)
         world_obj.turnNo +=1
+        world_obj.elapsed_days += getattr(world_obj, "time_step_days", 365.25)
 
     def _support_young_children(self, world_obj):
         """Transfer grocery money when young children are hungry and parents can cover it."""
