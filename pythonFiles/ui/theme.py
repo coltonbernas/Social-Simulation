@@ -19,4 +19,6 @@ LOG_COLORS = {
     "jobs": "#fbbf24", "health": "#f87171", "social": "#f472b6",
     "money": "#4ade80", "life": "#38bdf8", "info": "#cbd5e1",
 }
+# One subtle background tint per region (same order as the regions in config.json).
+REGION_TINTS = ("#15294a", "#2a1f4a", "#123b36", "#3b2d17")
 MAX_LOG_LINES = 2000
