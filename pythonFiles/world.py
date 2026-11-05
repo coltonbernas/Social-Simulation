@@ -1,15 +1,14 @@
 import json
 import random
 import math
+from pathlib import Path
 
-try:
-    from .config import (grid_rows, grid_cols, building_counts,
-                         type_1_income_per_turn, type_2_income_per_turn,
-                         grocery_food_cost)
-except ImportError:
-    from config import (grid_rows, grid_cols, building_counts,
-                        type_1_income_per_turn, type_2_income_per_turn,
-                        grocery_food_cost)
+# Shared path to the default config
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "default.json"
+
+from config import (grid_rows, grid_cols, building_counts,
+                    type_1_income_per_turn, type_2_income_per_turn,
+                    grocery_food_cost)
 
 REGION_SPLIT_ROWS = 2 #REGIONS VERTICALLY
 REGION_SPLIT_COLS = 2 #REGIONES SIDE BY SIDE
@@ -20,7 +19,7 @@ class World:
         # 1. Load config dictionary from file if not explicitly supplied
         if config is None:
             try:
-                with open("config.json", "r", encoding="utf-8") as f:
+                with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
                     config = json.load(f)
             except Exception:
                 config = {}

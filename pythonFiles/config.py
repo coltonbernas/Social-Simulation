@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 def load_config():
-    with (Path(__file__).resolve().parent / 'config.json').open('r') as config_file:
+    with (Path(__file__).resolve().parent / 'configs' / 'default.json').open('r') as config_file:
         config = json.load(config_file)
         return config
         

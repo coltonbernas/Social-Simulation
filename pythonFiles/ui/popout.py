@@ -1,14 +1,19 @@
 import csv
 import json
+from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from ui.theme import *
 from ui.config_dialog import *
+
+# Shared path to the configs directory
+CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
+DEFAULT_CONFIG_PATH = CONFIGS_DIR / "default.json"
  
 try:  # Support both ``python main.py`` and ``python -m pythonFiles.main``.
     from .world import World
     from .population import Population
-    from .config import building_names
+    from configs.config import building_names
 except ImportError:
     from world import World
     from population import Population
@@ -59,6 +64,7 @@ class SimulationWindow:
         self.final_reported = False
         self.buildings = []        # cached [(row, col, type)] so drawing is fast
         self.history = {"health": [], "wealth": []}
+        self.current_config = None 
  
         # View state
         self.view = "map"          # "map" or "wealth"
@@ -284,11 +290,14 @@ class SimulationWindow:
 
         # Load from disk if explicit config object wasn't supplied
         if active_config is None:
-            try:
-                with open("config.json", "r", encoding="utf-8") as f:
-                    active_config = json.load(f)
-            except Exception:
-                active_config = None
+            if self.current_config is not None:
+                active_config = self.current_config
+            else:
+                try:
+                    with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
+                        active_config = json.load(f)
+                except Exception:
+                    active_config = None
 
         # Pass the config dictionary to World if supported by your constructor
         if active_config:
@@ -906,16 +915,23 @@ class SimulationWindow:
     def open_config_and_reset(self):
         """Stops the run, displays parameter dialog, and resets simulation with chosen values."""
         self.stop()
-        try:
-            with open("config.json", "r", encoding="utf-8") as f:
-                base_config = json.load(f)
-        except Exception as err:
-            messagebox.showerror("Error", f"Failed to load config.json:\n{err}")
-            base_config = {}
+        
+        # Use current_config if it exists, otherwise load default.json
+        if self.current_config is None:
+            try:
+                with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
+                    base_config = json.load(f)
+            except Exception:
+                base_config = {}
+        else:
+            base_config = self.current_config
 
         dialog = ConfigDialog(self.root, base_config)
         self.root.wait_window(dialog)
-        self.reset(active_config=dialog.result)
+        
+        if dialog.result:
+            self.current_config = dialog.result
+            self.reset(active_config=self.current_config)
  
  
 def launch():

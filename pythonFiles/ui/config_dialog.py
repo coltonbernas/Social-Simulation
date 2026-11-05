@@ -1,9 +1,13 @@
-import csv
 import json
+import os
+from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from ui.theme import *
+
+# Shared path to the configs directory, regardless of execution environment
+CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
 
 
 class ConfigDialog(tk.Toplevel):
@@ -25,9 +29,9 @@ class ConfigDialog(tk.Toplevel):
         self.controls = {}
 
         # Hide window while constructing UI to eliminate loading flicker/lag
-        self.withdraw()
+        # self.withdraw()
         self._build_ui()
-        self.deiconify()
+        # self.deiconify()
 
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
@@ -130,9 +134,26 @@ class ConfigDialog(tk.Toplevel):
         for k, v in self.original_config.items():
             parse_data([k], k, v)
 
+        # Force update to ensure scrollregion is calculated correctly
+        scroll_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
         # Footer Buttons
         btn_frame = ttk.Frame(self, padding=12)
         btn_frame.pack(fill="x")
+
+        # --- Config Management Section ---
+        manage_frame = ttk.Frame(btn_frame)
+        manage_frame.pack(side="left")
+
+        ttk.Label(manage_frame, text="Presets:", style="Muted.TLabel").pack(side="left", padx=(0, 5))
+        self.config_selector = ttk.Combobox(manage_frame, state="readonly", width=20)
+        self.config_selector.pack(side="left", padx=5)
+        self._refresh_config_list()
+
+        ttk.Button(manage_frame, text="Load", command=self._load_preset).pack(side="left", padx=2)
+        ttk.Button(manage_frame, text="Save As...", command=self._save_preset).pack(side="left", padx=2)
+
         ttk.Button(
             btn_frame,
             text="Start Simulation",
@@ -293,11 +314,94 @@ class ConfigDialog(tk.Toplevel):
         self.destroy()
 
     def _on_defaults(self):
-        self._cleanup_bindings()
-        self.result = json.loads(json.dumps(self.original_config))
-        self.destroy()
+        """Resets the UI controls to the values present when the dialog was opened."""
+        for key_path, ctrl in self.controls.items():
+            # Retrieve the value from the original_config passed during __init__
+            curr = self.original_config
+            for k in key_path[:-1]:
+                curr = curr[k]
+            val = curr[key_path[-1]]
+
+            ctrl["value"].set(val)
+            ctrl["enabled"].set(True)  # Assuming we want them enabled on reset
 
     def _on_cancel(self):
         self._cleanup_bindings()
         self.result = json.loads(json.dumps(self.original_config))
         self.destroy()
+
+    def _refresh_config_list(self):
+        if not CONFIGS_DIR.exists():
+            CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
+        files = [f for f in os.listdir(CONFIGS_DIR) if f.endswith(".json")]
+        self.config_selector['values'] = files
+        if "default.json" in files:
+            self.config_selector.set("default.json")
+
+    def _save_preset(self):
+        name = filedialog.asksaveasfilename(
+            initialdir=str(CONFIGS_DIR),
+            title="Save Configuration",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")]
+        )
+        if name:
+            # Collect current values from UI
+            current_data = json.loads(json.dumps(self.result))
+            for key_path, ctrl in self.controls.items():
+                val = ctrl["value"].get()
+                curr = current_data
+                for k in key_path[:-1]:
+                    curr = curr[k]
+                curr[key_path[-1]] = val
+            
+            with open(name, "w", encoding="utf-8") as f:
+                json.dump(current_data, f, indent=4)
+            self._refresh_config_list()
+            self.config_selector.set(os.path.basename(name))
+            self.show_toast(f"Saved: {os.path.basename(name)}")
+
+    def _load_preset(self):
+        selected = self.config_selector.get()
+        if not selected:
+            return
+        
+        path = CONFIGS_DIR / selected
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                loaded_data = json.load(f)
+            
+            # Update UI controls
+            for key_path, ctrl in self.controls.items():
+                curr = loaded_data
+                try:
+                    for k in key_path[:-1]:
+                        curr = curr[k]
+                    val = curr[key_path[-1]]
+                    ctrl["value"].set(val)
+                    ctrl["enabled"].set(True)
+                except KeyError:
+                    continue 
+                    
+            self.show_toast(f"Loaded: {selected}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load config: {e}")
+
+    def show_toast(self, message, duration=2000):
+        """Displays a temporary overlay message."""
+        toast = tk.Label(
+            self,
+            text=message,
+            bg=ACCENT,
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            padx=20,
+            pady=10,
+            highlightthickness=1,
+            highlightbackground="white"
+        )
+        # Position toast at the bottom center of the window
+        toast.place(relx=0.5, rely=0.9, anchor="s")
+        
+        # Schedule removal
+        self.after(duration, toast.destroy)
