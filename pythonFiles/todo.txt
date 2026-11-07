@@ -7,3 +7,4 @@ Add More complex Agents interactions with other agents and the environment
 Fix so they aren't having 85 kids + add gender to ui 
 update ui, remove 84 children, match font, put ethnicity back
 Add more stats in UI
+make readme
