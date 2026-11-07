@@ -5,9 +5,14 @@ try:
     from .migration import process_migration
     from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
 except ImportError:
-    from agent import Agent
-    from migration import process_migration
-    from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+    try:
+        from pythonFiles.agent import Agent
+        from pythonFiles.migration import process_migration
+        from pythonFiles.config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+    except ImportError:
+        from agent import Agent
+        from migration import process_migration
+        from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
 
 
 class Population:

@@ -6,9 +6,25 @@ from pathlib import Path
 # Shared path to the default config
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "default.json"
 
-from config import (grid_rows, grid_cols, building_counts,
-                    type_1_income_per_turn, type_2_income_per_turn,
-                    grocery_food_cost)
+try:
+    from pythonFiles.config import (
+        grid_rows, grid_cols, building_counts,
+        type_1_income_per_turn, type_2_income_per_turn,
+        grocery_food_cost,
+    )
+except ImportError:
+    try:
+        from .config import (
+            grid_rows, grid_cols, building_counts,
+            type_1_income_per_turn, type_2_income_per_turn,
+            grocery_food_cost,
+        )
+    except ImportError:
+        from config import (
+            grid_rows, grid_cols, building_counts,
+            type_1_income_per_turn, type_2_income_per_turn,
+            grocery_food_cost,
+        )
 
 REGION_SPLIT_ROWS = 2 #REGIONS VERTICALLY
 REGION_SPLIT_COLS = 2 #REGIONES SIDE BY SIDE

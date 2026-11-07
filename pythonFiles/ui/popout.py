@@ -3,21 +3,31 @@ import json
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from ui.theme import *
-from ui.config_dialog import *
+
+try:
+    from .theme import *
+    from .config_dialog import *
+except ImportError:
+    from ui.theme import *
+    from ui.config_dialog import *
 
 # Shared path to the configs directory
 CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
 DEFAULT_CONFIG_PATH = CONFIGS_DIR / "default.json"
  
-try:  # Support both ``python main.py`` and ``python -m pythonFiles.main``.
-    from .world import World
-    from .population import Population
-    from configs.config import building_names
+try:  # Support ``python -m pythonFiles.main`` and repo-root imports.
+    from pythonFiles.world import World
+    from pythonFiles.population import Population
+    from pythonFiles.config import building_names
 except ImportError:
-    from world import World
-    from population import Population
-    from config import building_names
+    try:  # Support ``python main.py`` from the pythonFiles directory.
+        from world import World
+        from population import Population
+        from config import building_names
+    except ImportError:  # Direct package-relative fallback for some older layouts.
+        from ..world import World
+        from ..population import Population
+        from ..config import building_names
 
 TIME_INTERVALS = {
     "Day": 1,
@@ -672,6 +682,28 @@ class SimulationWindow:
     def _find_agent(self, agent_id):
         return next((a for a in self.population.all_agents if a.id == agent_id), None)
  
+    def _family_tree_summary(self, agent):
+        by_id = {other.id: other for other in self.population.all_agents}
+        parents = [by_id[parent_id] for parent_id in sorted(agent.parent_ids) if parent_id in by_id]
+        children = [by_id[child_id] for child_id in sorted(agent.children_ids) if child_id in by_id]
+        siblings = []
+        if agent.parent_ids:
+            for other in self.population.all_agents:
+                if other.id != agent.id and other.parent_ids and (other.parent_ids & agent.parent_ids):
+                    siblings.append(other)
+        partner = by_id.get(agent.dating_partner_id) if agent.dating_partner_id is not None else None
+
+        def fmt_people(people):
+            return ", ".join(str(p.id) if p is None else "Agent {}".format(p.id) for p in people) or "none"
+
+        parts = [
+            "Parents: {}".format(fmt_people(parents)),
+            "Partner: {}".format("Agent {}".format(partner.id) if partner else "none"),
+            "Children: {}".format(fmt_people(children)),
+            "Siblings: {}".format(fmt_people(siblings)),
+        ]
+        return "\n".join(parts)
+
     def refresh_agent_detail(self):
         detail = self.agent_detail
         detail.configure(state="normal")
@@ -701,11 +733,15 @@ class SimulationWindow:
             ("Intelligence / willpower", "{} / {}".format(agent.intelligence, agent.willpower)),
             ("Dating", "Agent {}".format(agent.dating_partner_id)
              if agent.dating_partner_id else "single"),
+            ("Family tree", self._family_tree_summary(agent)),
             ("Children", ", ".join(str(c) for c in sorted(agent.children_ids)) or "none"),
         )
         for key, value in fields:
             detail.insert("end", key + ": ", "key")
-            detail.insert("end", value + "\n")
+            if key == "Family tree":
+                detail.insert("end", value + "\n")
+            else:
+                detail.insert("end", value + "\n")
         detail.configure(state="disabled")
  
     # ----------------------------------------------------- 6. map interaction

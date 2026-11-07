@@ -4,7 +4,10 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from ui.theme import *
+try:
+    from .theme import *
+except ImportError:
+    from ui.theme import *
 
 # Shared path to the configs directory, regardless of execution environment
 CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
