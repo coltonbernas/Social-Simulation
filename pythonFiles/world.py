@@ -215,21 +215,107 @@ class World:
             if name in counts:
                 requested_types.extend([building_type] * counts[name])
 
-        # Guarantee every region gets one Type 1 workplace and one budget house.
+        # Give each region its own compact city: services and workplaces cluster
+        # near the middle, while homes favor the outer neighborhoods.
         free_cells = {(r, c) for r in range(self.rows) for c in range(self.cols)}
         placed = []
-        for region in self.regions:
-            cells = [cell for cell in self.region_cells(region) if cell in free_cells]
-            for wanted in (1, 6):
-                if wanted in requested_types and cells:
-                    requested_types.remove(wanted)
-                    location = random.choice(cells)
-                    cells.remove(location)
-                    free_cells.discard(location)
-                    placed.append((wanted, location))
+        region_building_counts = {region["id"]: 0 for region in self.regions}
+        neighborhood_house_counts = {
+            region["id"]: [0, 0] for region in self.regions
+        }
 
-        locations = random.sample(sorted(free_cells), len(requested_types))
-        placed.extend(zip(requested_types, locations))
+        def neighborhood_centers(region):
+            row_span = region["row_end"] - region["row_start"]
+            col_span = region["col_end"] - region["col_start"]
+            return (
+                (region["row_start"] + row_span * 0.25,
+                 region["col_start"] + col_span * 0.25),
+                (region["row_start"] + row_span * 0.75,
+                 region["col_start"] + col_span * 0.75),
+            )
+
+        def place(building_type, region):
+            cells = [cell for cell in self.region_cells(region) if cell in free_cells]
+            if not cells:
+                return False
+            center_row = (region["row_start"] + region["row_end"]) / 2
+            center_col = (region["col_start"] + region["col_end"]) / 2
+            # Keep workplaces, hospitals, and grocery stores in the compact
+            # downtown core, with schools and homes near residential clusters.
+            if building_type in (1, 2, 4, 5):
+                candidates = [cell for cell in cells
+                              if max(abs(cell[0] - center_row),
+                                     abs(cell[1] - center_col)) <= 1.5]
+            elif building_type == 3:
+                centers = neighborhood_centers(region)
+                service_distances = {
+                    cell: min(abs(cell[0] - row) + abs(cell[1] - col)
+                              for row, col in centers)
+                    for cell in cells
+                }
+                candidates = [cell for cell in cells if service_distances[cell] <= 2]
+                candidates.sort(key=lambda cell: service_distances[cell])
+                if candidates:
+                    nearest_distance = service_distances[candidates[0]]
+                    candidates = [cell for cell in candidates
+                                  if service_distances[cell] <= nearest_distance + 1]
+            else:
+                centers = neighborhood_centers(region)
+                cluster_counts = neighborhood_house_counts[region["id"]]
+                neighborhood_index = min(
+                    range(len(centers)), key=lambda index: cluster_counts[index]
+                )
+                row, col = centers[neighborhood_index]
+                candidates = [cell for cell in cells
+                              if abs(cell[0] - row) + abs(cell[1] - col) <= 2
+                              and max(abs(cell[0] - center_row),
+                                      abs(cell[1] - center_col)) > 1.5]
+                if not candidates:
+                    candidates = [cell for cell in cells
+                                  if max(abs(cell[0] - center_row),
+                                         abs(cell[1] - center_col)) > 1.5]
+                candidates.sort(key=lambda cell: abs(cell[0] - row) + abs(cell[1] - col))
+                if candidates:
+                    nearest_distance = abs(candidates[0][0] - row) + abs(candidates[0][1] - col)
+                    candidates = [cell for cell in candidates
+                                  if abs(cell[0] - row) + abs(cell[1] - col)
+                                  <= nearest_distance + 1]
+            selected = random.choice(candidates or cells)
+            free_cells.remove(selected)
+            placed.append((building_type, selected))
+            region_building_counts[region["id"]] += 1
+            if building_type in (6, 7):
+                centers = neighborhood_centers(region)
+                selected_neighborhood = min(
+                    range(len(centers)),
+                    key=lambda index: abs(selected[0] - centers[index][0])
+                    + abs(selected[1] - centers[index][1]),
+                )
+                neighborhood_house_counts[region["id"]][selected_neighborhood] += 1
+            return True
+
+        # Seed each downtown with a mix of requested major uses before filling
+        # in the extra Type 1 workplaces and other buildings.
+        for region in self.regions:
+            for wanted in (1, 2, 4, 5, 6):
+                if wanted in requested_types and place(wanted, region):
+                    requested_types.remove(wanted)
+
+        # Distribute remaining buildings across regions, balancing their total
+        # counts before selecting a downtown or residential location.
+        random.shuffle(requested_types)
+        for building_type in requested_types:
+            available_regions = [
+                region for region in self.regions
+                if any(cell in free_cells for cell in self.region_cells(region))
+            ]
+            if not available_regions:
+                break
+            least_built = min(region_building_counts[region["id"]]
+                              for region in available_regions)
+            balanced_regions = [region for region in available_regions
+                                if region_building_counts[region["id"]] == least_built]
+            place(building_type, random.choice(balanced_regions))
 
         for building_type, location in placed:
             row, col = location
