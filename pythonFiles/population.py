@@ -167,6 +167,10 @@ class Population:
         self._try_transmission(second, first, world_obj)
 
     @staticmethod
+    def _are_siblings(first, second):
+        return bool(first.parent_ids & second.parent_ids)
+
+    @staticmethod
     def _advance_relationship(first, second, turn, world_obj):
         """Award interaction points and establish friendship or exclusive dating."""
         previous_points = first.relationship_points.get(second.id, 0)
@@ -174,12 +178,14 @@ class Population:
         is_parent_child = (
             second.id in first.parent_ids or first.id in second.parent_ids
         )
+        are_siblings = Population._are_siblings(first, second)
         points = min(10, previous_points + 5) if is_parent_child else previous_points + 5
         first.relationship_points[second.id] = points
         second.relationship_points[first.id] = points
 
         can_date_each_other = (
             not is_parent_child
+            and not are_siblings
             and first.marital_status != "married"
             and second.marital_status != "married"
             and
@@ -397,6 +403,7 @@ class Population:
                 continue
             second = agents_by_id.get(partner_id)
             if (second is None or second.dating_partner_id != first.id
+                    or self._are_siblings(first, second)
                     or first.children_ids.intersection(second.children_ids)):
                 continue
             self.birth_child(world_obj, first, second)
@@ -413,6 +420,7 @@ class Population:
                 continue
             second = agents_by_id.get(partner_id)
             if (second is None or second.dating_partner_id != first.id
+                    or self._are_siblings(first, second)
                     or first.marital_status == "married"
                     or second.marital_status == "married"
                     or first.wealth + second.wealth < 2000):

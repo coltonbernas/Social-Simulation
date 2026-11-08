@@ -719,6 +719,8 @@ class SimulationWindow:
                                    fg=STATUS_COLORS.get(status, MUTED))
         fields = (
             ("Age", "{} (dies naturally at {})".format(agent.age, agent.death_age)),
+            ("Gender", agent.gender.title()),
+            ("Ethnicity", agent.ethnicity),
             ("Health", "{}/100".format(agent.health)),
             ("Mental health", "{}/100".format(agent.mental_health)),
             ("Food", "{}/{}".format(agent.hunger, agent.hunger_max)),
@@ -734,14 +736,10 @@ class SimulationWindow:
             ("Dating", "Agent {}".format(agent.dating_partner_id)
              if agent.dating_partner_id else "single"),
             ("Family tree", self._family_tree_summary(agent)),
-            ("Children", ", ".join(str(c) for c in sorted(agent.children_ids)) or "none"),
         )
         for key, value in fields:
             detail.insert("end", key + ": ", "key")
-            if key == "Family tree":
-                detail.insert("end", value + "\n")
-            else:
-                detail.insert("end", value + "\n")
+            detail.insert("end", value + "\n")
         detail.configure(state="disabled")
  
     # ----------------------------------------------------- 6. map interaction
