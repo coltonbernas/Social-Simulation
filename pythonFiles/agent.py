@@ -186,7 +186,7 @@ class Agent:
         self.empathy = random.random()
         self.resilience = random.random()
         self.agreeableness = None
-        self.openness = None
+        self.openness = random.random()
         self.implusiveness = None
         self.creativity = None
         self.needs = {}
