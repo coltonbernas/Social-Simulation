@@ -163,6 +163,12 @@ class World:
                 "economy_score": 0.5,
                 "immigrants": 0,
                 "emigrants": 0,
+                "tax_rate": vals.get("tax_rate", 0.0),
+                "home_quality": vals.get("home_quality", 1.0),
+                "tension": 0.0,
+                "rich_share": 0.0,
+                "treasury": 0,
+                "tax_collected": 0,
             })
         for region in self.regions:
             print("Region {} '{}' ({}): rows {}-{}, cols {}-{}; wage x{}, cost of living x{}".format(
@@ -252,6 +258,8 @@ class World:
         w_wealth = self._setting("Regional Economy", "wealth_weight", 0.2)
         wealth_ref = max(1, self._setting("Regional Economy", "wealth_reference", 1000))
         weight_total = (w_wage + w_jobs + w_wealth) or 1.0
+        rich_line = self._setting("Migration", "rich_wealth_threshold", 3000)
+        rich_line = self._setting("Migration", "rich_wealth_threshold", 3000)
 
         residents = {region["id"]: [] for region in self.regions}
         for agent in agents:
@@ -275,6 +283,8 @@ class World:
             region["job_seekers"] = sum(1 for a in adults if not a.job)
             region["open_jobs"] = open_jobs[rid]
             region["house_count"] = house_counts[rid]
+            region["rich_share"] = (
+                sum(1 for a in people if a.wealth >= rich_line) / count if count else 0.0)
 
             if reprice:
                 # Housing demand: more people per house building pushes prices up.
@@ -314,7 +324,30 @@ class World:
         base = self._setting("Economy & Jobs", key, 300 if house_type == 6 else 700)
         region = self.regions[region_id]
         return int(round(base * region["cost_multiplier"]
-                         * region.get("housing_price_factor", 1.0)))
+                         * region.get("housing_price_factor", 1.0)
+                         * region.get("home_quality", 1.0)))
+
+    def collect_tax(self, region_id, gross):
+        """Take income tax from a wage and put it in the region's treasury."""
+        region = self.regions[region_id]
+        tax = int(round(gross * region.get("tax_rate", 0.0)))
+        region["tax_collected"] += tax
+        region["treasury"] += tax
+        return tax
+
+    def distribute_welfare(self, agents):
+        """Each region pays unemployed adults from its treasury until it runs out."""
+        share = self._setting("Economy & Jobs", "welfare_per_unemployed", 20)
+        min_age = self._setting("Migration", "min_age", 18)
+        for region in self.regions:
+            for agent in agents:
+                if agent.region != region["id"] or agent.age < min_age or agent.job is not None:
+                    continue
+                pay = min(share, region["treasury"])
+                if pay <= 0:
+                    break
+                region["treasury"] -= pay
+                agent.wealth += pay
 
     def food_cost(self, region_id):
         base = self._setting("Grocery & Needs", "grocery_food_cost", grocery_food_cost)

@@ -194,11 +194,12 @@ class SimulationWindow:
             self.sparks[key] = (spark, color)
         tk.Label(tab, text="Regions", bg=BG, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(10, 0))
         self.region_tree = ttk.Treeview(
-            tab, columns=("name", "pop", "wealth", "jobs", "rent"),
+            tab, columns=("name", "pop", "wealth", "jobs", "rent", "tax", "tension"),
             show="headings", height=4, selectmode="none")
-        for col, title, width in (("name", "Region", 90), ("pop", "Pop", 40),
-                                  ("wealth", "Avg $", 70), ("jobs", "Open jobs", 70),
-                                  ("rent", "Rent x", 55)):
+        for col, title, width in (("name", "Region", 80), ("pop", "Pop", 35),
+                                  ("wealth", "Avg $", 60), ("jobs", "Jobs", 40),
+                                  ("rent", "Rent x", 50), ("tax", "Tax", 40),
+                                  ("tension", "Tension", 55)):
             self.region_tree.heading(col, text=title)
             self.region_tree.column(col, width=width, anchor="center", stretch=False)
         self.region_tree.pack(fill="x")
@@ -435,7 +436,7 @@ class SimulationWindow:
     EVENT_LISTS = (
         "building_entries", "hiring_events", "job_quit_events", "death_events",
         "school_events", "grocery_events", "disease_events", "relationship_events",
-        "birth_events", "money_transfer_events", "house_events", "hospital_events",
+        "birth_events", "money_transfer_events", "house_events", "hospital_events","migration_events",
     )
  
     def _event_counts(self):
@@ -487,6 +488,10 @@ class SimulationWindow:
         for e in new("birth_events"):
             self._log("Turn {}: Agent {} was born to {} and {}; religion: {}.".format(
                 e["turn"], e["agent_id"], *e["parent_names"], e["religion"]), "life")
+        for e in new("migration_events"):
+            how = "fled as a refugee" if e["refugee"] else "migrated"
+            self._log("Turn {}: Agent {} {} from {} to {} (cost ${:,}).".format(
+                e["turn"], e["agent_id"], how, e["from"], e["to"], e["cost"]), "life")
         for e in new("death_events"):
             self._log("Turn {}: Agent {} died from {} at age {}.".format(
                 e["turn"], e["agent_id"], e["cause"], e["age"]), "life")
@@ -556,7 +561,9 @@ class SimulationWindow:
                 if holder is None and self.world.region_of(*loc) == region["id"])
             self.region_tree.insert("", "end", values=(
                 region["name"], n, "${:,.0f}".format(avg_wealth), open_jobs,
-                "{:.2f}".format(region.get("housing_price_factor", 1.0))))
+                "{:.2f}".format(region.get("housing_price_factor", 1.0)),
+                "{:.0f}%".format(region.get("tax_rate", 0.0) * 100),
+                "{:.2f}".format(region.get("tension", 0.0))))
  
     def refresh_agent_table(self):
         self._tree_guard = True  # stop our own updates triggering a selection event

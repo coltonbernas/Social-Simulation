@@ -383,8 +383,10 @@ class Agent:
         self.update_stressful_events()
 
     def earn_income(self, world_obj):
-        """Add this turn's wages, scaled by the home region's wage multiplier."""
-        self.wealth += world_obj.income_for(self.job, self.region)
+        """Add this turn's wages after the home region's income tax."""
+        gross = world_obj.income_for(self.job, self.region)
+        tax = world_obj.collect_tax(self.region, gross)
+        self.wealth += gross - tax
 
     def advance_school(self, world_obj):
         """Count attendance turns and award intelligence after five turns."""
@@ -489,7 +491,9 @@ class Agent:
             return
         house_type = world_obj.grid[self.house[0]][self.house[1]]
         if (self.pos_x, self.pos_y) == self.house:
-            self.mental_health = min(100, self.mental_health + (5 if house_type == 6 else 15))
+            quality = world_obj.regions[world_obj.region_of(*self.house)]["home_quality"]
+            gain = (5 if house_type == 6 else 15) * quality
+            self.mental_health = min(100, self.mental_health + gain)
         self.house_turns_since_payment += 1
         if self.house_turns_since_payment < 4:
             return
