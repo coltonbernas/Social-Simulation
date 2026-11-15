@@ -14,6 +14,9 @@ _legacy_building_count = config.get("building_count", config.get("fruit_count", 
 _default_building_counts = {
     "type_1_workplace": 2,
     "type_2_workplace": 2,
+    "type_3_workplace": 1,
+    "type_4_workplace": 1,
+    "type_5_workplace": 1,
     "school": 1,
     "grocery_store": 1,
     "hospital": 1,
@@ -72,4 +75,26 @@ building_names = {
     5: "Hospital",
     6: "Budget House",
     7: "Premium House",
+    8: "Type 3 Workplace",
+    9: "Type 4 Workplace",
+    10: "Type 5 Workplace",
+}
+
+job_names = {
+    1: "Type 1 job",
+    2: "Type 2 job",
+    4: "Grocery Store job",
+    5: "Hospital job",
+    8: "Type 3 job",
+    9: "Type 4 job",
+    10: "Type 5 job",
+}
+job_income_per_year = {
+    1: type_1_income_per_year,
+    2: type_2_income_per_year,
+    4: config.get("Economy & Jobs", {}).get("grocery_store_income_per_year", 32000),
+    5: config.get("Economy & Jobs", {}).get("hospital_income_per_year", 110000),
+    8: config.get("Economy & Jobs", {}).get("type_3_income_per_year", 50000),
+    9: config.get("Economy & Jobs", {}).get("type_4_income_per_year", 25000),
+    10: config.get("Economy & Jobs", {}).get("type_5_income_per_year", 70000),
 }

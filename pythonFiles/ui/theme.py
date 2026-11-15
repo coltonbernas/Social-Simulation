@@ -8,6 +8,7 @@ BUILDINGS = {
     1: ("#f59e0b", "W1"), 2: ("#10b981", "W2"), 3: ("#3b82f6", "SCH"),
     4: ("#ef4444", "GRO"), 5: ("#a855f7", "HOS"), 6: ("#d4a373", "H1"),
     7: ("#f472b6", "H2"),
+    8: ("#06b6d4", "W3"), 9: ("#84cc16", "W4"), 10: ("#e879f9", "W5"),
 }
 # what an agent is doing -> dot colour
 STATUS_COLORS = {

@@ -28,7 +28,7 @@ def move_agent(agent, world_obj, dest_id, cost):
 
     old = (agent.pos_x, agent.pos_y)
     occupants = None
-    for registry in (world_obj.school_occupants, world_obj.grocery_occupants,
+    for registry in (world_obj.workplace_occupants, world_obj.school_occupants, world_obj.grocery_occupants,
                      world_obj.hospital_occupants, world_obj.houses):
         if old in registry:
             occupants = registry[old]

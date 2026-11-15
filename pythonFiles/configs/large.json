@@ -6,6 +6,9 @@
     "Building Counts": {
         "type_1_workplace": 100,
         "type_2_workplace": 30,
+        "type_3_workplace": 10,
+        "type_4_workplace": 10,
+        "type_5_workplace": 5,
         "school": 12,
         "grocery_store": 40,
         "hospital": 10,
@@ -25,6 +28,11 @@
     "Economy & Jobs": {
         "type_1_income_per_year": 36525,
         "type_2_income_per_year": 91312.5,
+        "grocery_store_income_per_year": 32000,
+        "hospital_income_per_year": 110000,
+        "type_3_income_per_year": 50000,
+        "type_4_income_per_year": 25000,
+        "type_5_income_per_year": 70000,
         "budget_house_cost": 300,
         "premium_house_cost": 700,
         "low_wealth_threshold": 1000,

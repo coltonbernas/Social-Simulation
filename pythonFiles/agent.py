@@ -362,8 +362,8 @@ class Agent:
         if self.job is not None or self.school_completed or self.schooling_at is not None:
             return False
         available_jobs = [
-            location for location, holder in world_obj.building_jobs.items()
-            if holder is None
+            location for location, holders in world_obj.building_jobs.items()
+            if len(holders) < world_obj.job_capacities[location]
                and self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
                and self.applied_buildings.get(location)
                != world_obj.job_opening_versions[location]
@@ -407,7 +407,7 @@ class Agent:
         self.active_stressful_events = current_events
 
     def can_buy_food(self, world_obj):
-        cost = world_obj.food_cost(self.region)
+        cost = world_obj.food_cost(self.region, self)
         threshold = self._get_cfg_val(world_obj, "Grocery & Needs",
                                       "grocery_hunger_threshold", grocery_hunger_threshold)
         return self.wealth >= cost and self.hunger < threshold
@@ -483,7 +483,7 @@ class Agent:
         if location not in world_obj.grocery_stores or not self.can_buy_food(world_obj):
             return False
 
-        cost = world_obj.food_cost(self.region)
+        cost = world_obj.food_cost(self.region, self)
         h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
         health_restore = self._get_cfg_val(world_obj, "Grocery & Needs",
                                            "grocery_food_health_restore", grocery_food_health_restore)
@@ -532,7 +532,9 @@ class Agent:
             self.hospital_visit_event = None
         self.hospitalized_at = None
         self.hospital_stay_turns = 0
-        occupants = world_obj.hospital_occupants.get((self.pos_x, self.pos_y))
+        occupants = world_obj.workplace_occupants.get((self.pos_x, self.pos_y))
+        if occupants is None:
+            occupants = world_obj.hospital_occupants.get((self.pos_x, self.pos_y))
         if occupants is not None:
             occupants.discard(self.id)
             if world_obj.agent_grid[self.pos_x][self.pos_y] == self.id:
@@ -577,11 +579,11 @@ class Agent:
 
         visible_buildings = self.scan_surroundings(world_obj, rows, cols)
         job_targets = [
-            location for location, job_holder in world_obj.building_jobs.items()
+            location for location, job_holders in world_obj.building_jobs.items()
             if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
                and self.applied_buildings.get(location)
                != world_obj.job_opening_versions[location]
-               and job_holder is None
+               and len(job_holders) < world_obj.job_capacities[location]
                and self.in_my_region(world_obj, location)
         ]
         visible_empty = self.scan_empty_surroundings(world_obj, rows, cols)
@@ -681,11 +683,11 @@ class Agent:
                 (self.pos_x, self.pos_y),
             )
             job_targets = [
-                location for location, job_holder in world_obj.building_jobs.items()
+                location for location, job_holders in world_obj.building_jobs.items()
                 if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
                    and self.applied_buildings.get(location)
                    != world_obj.job_opening_versions[location]
-                   and job_holder is None
+                   and len(job_holders) < world_obj.job_capacities[location]
                    and self.in_my_region(world_obj, location)
             ]
             if self.job == "Type 2 job":
@@ -729,10 +731,8 @@ class Agent:
             destination = (next_x, next_y)
             if destination == (self.pos_x, self.pos_y):
                 continue
-            if world_obj.grid[next_x][next_y] == 5 and not self.diseases:
-                continue
             if (world_obj.agent_grid[next_x][next_y] not in (0, self.id)
-                    and world_obj.grid[next_x][next_y] not in (3, 4, 5, 6, 7)):
+                    and world_obj.grid[next_x][next_y] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)):
                 blocked_moves.append(move)
                 continue
             fallback_moves.append(move)
@@ -804,14 +804,16 @@ class Agent:
         next_y = max(0, min(cols - 1, self.pos_y + dy))
         other_agent_id = world_obj.agent_grid[next_x][next_y]
         if (other_agent_id not in (0, self.id)
-                and world_obj.grid[next_x][next_y] not in (3, 4, 5, 6, 7)):
+                and world_obj.grid[next_x][next_y] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)):
             print("Agent {} bumped into Agent {} at ({}, {}).".format(
                 self.id, other_agent_id, next_x, next_y
             ))
             return other_agent_id
 
         old_position = (self.pos_x, self.pos_y)
-        old_shared_occupants = world_obj.school_occupants.get(old_position)
+        old_shared_occupants = world_obj.workplace_occupants.get(old_position)
+        if old_shared_occupants is None:
+            old_shared_occupants = world_obj.school_occupants.get(old_position)
         if old_shared_occupants is None:
             old_shared_occupants = world_obj.grocery_occupants.get(old_position)
         if old_shared_occupants is None:
@@ -839,8 +841,10 @@ class Agent:
         self.position_visits[new_position] = self.position_visits.get(new_position, 0) + 1
 
         building_location = (self.pos_x, self.pos_y)
-        if world_obj.grid[self.pos_x][self.pos_y] in (3, 4, 5, 6, 7):
-            occupants = world_obj.school_occupants.get(building_location)
+        if world_obj.grid[self.pos_x][self.pos_y] in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            occupants = world_obj.workplace_occupants.get(building_location)
+            if occupants is None:
+                occupants = world_obj.school_occupants.get(building_location)
             if occupants is None:
                 occupants = world_obj.grocery_occupants.get(building_location)
             if occupants is None:
@@ -866,7 +870,7 @@ class Agent:
             print("Agent {} entered the {} at ({}, {}).".format(
                 self.id, building_names[building_type], self.pos_x, self.pos_y
             ))
-            if building_type in (1, 2):
+            if building_type in world_obj.building_jobs:
                 self.apply_for_job(world_obj, building_type, building_location)
             elif building_type == 3 and school_target == building_location:
                 self.start_school(world_obj, building_location)
@@ -919,7 +923,7 @@ class Agent:
         """Unemployed agents can apply anywhere; type 1 employees seek type 2."""
         if self.job is None:
             return True
-        return self.job == "Type 1 job" and building_type == 2
+        return self.job == "Type 1 job" and building_type != 1
 
     def apply_for_job(self, world_obj, building_type, building_location):
         """Apply once per opening using intelligence, willpower and health."""
@@ -931,7 +935,7 @@ class Agent:
         if self.applied_buildings.get(building_location) == opening_version:
             return False
         self.applied_buildings[building_location] = opening_version
-        if world_obj.building_jobs[building_location] is not None:
+        if len(world_obj.building_jobs[building_location]) >= world_obj.job_capacities[building_location]:
             print("Agent {} found no open job at this building.".format(self.id))
             return False
 
@@ -953,12 +957,10 @@ class Agent:
             + health_score * weights["health"]
         )
         application_score = weighted_total / sum(weights.values())
-        # Keep type 1 reachable for an otherwise average agent; type 2 is
-        # harder, while allowing above-average intelligence to qualify with
-        # typical willpower and health.
-        minimum_score = {1: 60, 2: 73}[building_type]
+        annual_income = world_obj.job_income_per_year(building_type)
+        minimum_score = max(50, min(90, 60 + (annual_income - 36525) * 13 / (91312 - 36525)))
         hired = application_score >= minimum_score
-        job_title = "Type {} job".format(building_type)
+        job_title = world_obj.job_name(building_type)
         event = {
             "turn": world_obj.turnNo + 1,
             "agent_id": self.id,
@@ -975,7 +977,7 @@ class Agent:
             previous_location = self.employed_at
             if previous_job is not None:
                 world_obj.reopen_job(previous_location, self)
-            world_obj.building_jobs[building_location] = self.id
+            world_obj.building_jobs[building_location].add(self.id)
             self.job = job_title
             self.employed_at = building_location
             world_obj.hiring_events.append(event.copy())

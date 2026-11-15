@@ -764,7 +764,7 @@ class SimulationWindow:
             "sick": str(s["sick"]),
             "employed": "{} / {}".format(s["employed"], s["n"]),
             "wealth": "${:,.0f}".format(s["wealth"]),
-            "jobs": "{} / {}".format(self.world.open_jobs, len(self.world.building_jobs)),
+            "jobs": "{} / {}".format(self.world.open_jobs, sum(self.world.job_capacities.values())),
         }
         for key, text in values.items():
             self.stat_values[key].configure(text=text)
@@ -800,8 +800,9 @@ class SimulationWindow:
             n = len(members)
             avg_wealth = sum(a.wealth for a in members) / n if n else 0
             open_jobs = sum(
-                1 for loc, holder in self.world.building_jobs.items()
-                if holder is None and self.world.region_of(*loc) == region["id"])
+                self.world.job_capacities[loc] - len(holders)
+                for loc, holders in self.world.building_jobs.items()
+                if self.world.region_of(*loc) == region["id"])
             self.region_tree.insert("", "end", values=(
                 region["name"], n, "${:,.0f}".format(avg_wealth), open_jobs,
                 "{:.2f}".format(region.get("housing_price_factor", 1.0))))
@@ -987,9 +988,10 @@ class SimulationWindow:
         building = self.world.grid[row][col]
         if building:
             text += "  ·  " + building_names[building]
-            if building in (1, 2):
-                holder = self.world.building_jobs.get((row, col))
-                text += "  ·  " + ("Agent {} works here".format(holder) if holder else "job open")
+            if building in self.world.building_jobs:
+                holders = self.world.building_jobs[(row, col)]
+                text += "  ·  {}/{} jobs filled".format(
+                    len(holders), self.world.job_capacities[(row, col)])
         agents = self._agents_at(row, col)
         if agents:
             text += "  ·  " + ", ".join(
