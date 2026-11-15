@@ -5,7 +5,7 @@ try:
         grid_rows, grid_cols, health_min, health_max, starting_health_min,
         base_disease_transmission, disease_health_impact,
         disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
-        type_1_income_per_turn, type_2_income_per_turn,
+        type_1_income_per_year, type_2_income_per_year,
         low_wealth_threshold, low_wealth_stress_turns,
         grocery_hunger_threshold, grocery_food_cost,
         grocery_food_health_restore, grocery_food_mental_restore,
@@ -18,7 +18,7 @@ except ImportError:
         grid_rows, grid_cols, health_min, health_max, starting_health_min,
         base_disease_transmission, disease_health_impact,
         disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
-        type_1_income_per_turn, type_2_income_per_turn,
+        type_1_income_per_year, type_2_income_per_year,
         low_wealth_threshold, low_wealth_stress_turns,
         grocery_hunger_threshold, grocery_food_cost,
         grocery_food_health_restore, grocery_food_mental_restore,
@@ -144,6 +144,7 @@ class Agent:
         self.wealth = cfg_start_wealth
         self.house = None
         self.house_turns_since_payment = 0
+        self.house_rent_days = 0.0
         self.low_wealth_turns = 0
         self.job = None
         self.employed_at = None
@@ -473,6 +474,7 @@ class Agent:
         self.wealth -= cost
         self.house = location
         self.house_turns_since_payment = 0
+        self.house_rent_days = 0.0
         world_obj.houses[location].add(self.id)
         event = {"turn": world_obj.turnNo + 1, "agent_id": self.id,
                  "event": "bought", "house_type": house_type,
@@ -484,19 +486,22 @@ class Agent:
         return True
 
     def advance_house_stay(self, world_obj):
-        """Restore mood while housed and collect rent every four turns."""
+        """Restore mood and collect rent for each four calendar days lived."""
         if self.house is None:
             return
         house_type = world_obj.grid[self.house[0]][self.house[1]]
         if (self.pos_x, self.pos_y) == self.house:
             self.mental_health = min(100, self.mental_health + (5 if house_type == 6 else 15))
-        self.house_turns_since_payment += 1
-        if self.house_turns_since_payment < 4:
+        self.house_rent_days += getattr(world_obj, "time_step_days", 1.0)
+        rent_periods = int(self.house_rent_days // 4)
+        if rent_periods < 1:
             return
-        cost = world_obj.house_cost(house_type, world_obj.region_of(*self.house))
+        period_cost = world_obj.house_cost(house_type, world_obj.region_of(*self.house))
+        cost = period_cost * rent_periods
         if self.wealth >= cost:
             self.wealth -= cost
-            self.house_turns_since_payment = 0
+            self.house_rent_days -= rent_periods * 4
+            self.house_turns_since_payment = int(self.house_rent_days)
             event = {"turn": world_obj.turnNo + 1, "agent_id": self.id,
                      "event": "paid", "house_type": house_type,
                      "position": self.house, "amount": cost, "wealth": self.wealth}
@@ -509,6 +514,7 @@ class Agent:
             world_obj.houses[location].discard(self.id)
             self.house = None
             self.house_turns_since_payment = 0
+            self.house_rent_days = 0.0
             self.mental_health = max(
                 0, self.mental_health - 25 * (1 - self.resilience)
             )

@@ -9,20 +9,20 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "default.jso
 try:
     from pythonFiles.config import (
         grid_rows, grid_cols, building_counts,
-        type_1_income_per_turn, type_2_income_per_turn,
+        type_1_income_per_year, type_2_income_per_year,
         grocery_food_cost,
     )
 except ImportError:
     try:
         from .config import (
             grid_rows, grid_cols, building_counts,
-            type_1_income_per_turn, type_2_income_per_turn,
+            type_1_income_per_year, type_2_income_per_year,
             grocery_food_cost,
         )
     except ImportError:
         from config import (
             grid_rows, grid_cols, building_counts,
-            type_1_income_per_turn, type_2_income_per_turn,
+            type_1_income_per_year, type_2_income_per_year,
             grocery_food_cost,
         )
 
@@ -405,13 +405,19 @@ class World:
         return self.config.get(key, fallback)
 
     def income_for(self, job, region_id):
+        economy = self.config.get("Economy & Jobs", {})
         if job == "Type 1 job":
-            base = self._setting("Economy & Jobs", "type_1_income_per_turn", type_1_income_per_turn)
+            base = economy.get("type_1_income_per_year")
+            if base is None:
+                base = economy.get("type_1_income_per_turn", type_1_income_per_year / 365.25) * 365.25
         elif job == "Type 2 job":
-            base = self._setting("Economy & Jobs", "type_2_income_per_turn", type_2_income_per_turn)
+            base = economy.get("type_2_income_per_year")
+            if base is None:
+                base = economy.get("type_2_income_per_turn", type_2_income_per_year / 365.25) * 365.25
         else:
             return 0
-        return int(round(base * self.regions[region_id]["wage_multiplier"]))
+        days = getattr(self, "time_step_days", 1.0)
+        return int(round(base * days / 365.25 * self.regions[region_id]["wage_multiplier"]))
 
     def house_cost(self, house_type, region_id):
         key = "budget_house_cost" if house_type == 6 else "premium_house_cost"
@@ -422,7 +428,8 @@ class World:
 
     def food_cost(self, region_id):
         base = self._setting("Grocery & Needs", "grocery_food_cost", grocery_food_cost)
-        return int(round(base * self.regions[region_id]["cost_multiplier"]))
+        days = getattr(self, "time_step_days", 1.0)
+        return int(round(base * days * self.regions[region_id]["cost_multiplier"]))
 
     def update_housing_prices(self, agents):
         """More people per house than average -> higher housing prices in that region."""

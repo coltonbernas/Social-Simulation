@@ -48,6 +48,7 @@ def move_agent(agent, world_obj, dest_id, cost):
         world_obj.houses[agent.house].discard(agent.id)
         agent.house = None
         agent.house_turns_since_payment = 0
+        agent.house_rent_days = 0.0
     if agent.schooling_at is not None:
         world_obj.school_occupants[agent.schooling_at].discard(agent.id)
         agent.schooling_at = None

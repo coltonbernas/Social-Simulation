@@ -26,8 +26,8 @@
         "hospital_stay_duration_turns": 3
     },
     "Economy & Jobs": {
-        "type_1_income_per_turn": 100,
-        "type_2_income_per_turn": 250,
+        "type_1_income_per_year": 36525,
+        "type_2_income_per_year": 91312.5,
         "budget_house_cost": 300,
         "premium_house_cost": 700,
         "low_wealth_threshold": 1000,

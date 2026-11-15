@@ -46,8 +46,13 @@ disease_health_impact = config.get("disease_health_impact", 20)
 disease_chance_per_turn = config.get("disease_chance_per_turn", 0.5)
 hunger_drain_per_step = config.get("hunger_drain_per_step", 5)
 starting_wealth = config.get("starting_wealth", 0)
-type_1_income_per_turn = config.get("type_1_income_per_turn", 100)
-type_2_income_per_turn = config.get("type_2_income_per_turn", 250)
+_days_per_year = 365.25
+type_1_income_per_year = config.get(
+    "type_1_income_per_year", config.get("type_1_income_per_turn", 100) * _days_per_year
+)
+type_2_income_per_year = config.get(
+    "type_2_income_per_year", config.get("type_2_income_per_turn", 250) * _days_per_year
+)
 low_wealth_threshold = config.get("low_wealth_threshold", 1000)
 low_wealth_stress_turns = config.get("low_wealth_stress_turns", 10)
 grocery_hunger_threshold = config.get("grocery_hunger_threshold", 25)
