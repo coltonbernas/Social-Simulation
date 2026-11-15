@@ -4,15 +4,27 @@ try:
     from .agent import Agent
     from .migration import process_migration
     from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+    from .disease import (
+        activate_pending_infections, combine_parent_immune_systems,
+        disease_name, process_disease_turn,
+    )
 except ImportError:
     try:
         from pythonFiles.agent import Agent
         from pythonFiles.migration import process_migration
         from pythonFiles.config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+        from pythonFiles.disease import (
+            activate_pending_infections, combine_parent_immune_systems,
+            disease_name, process_disease_turn,
+        )
     except ImportError:
         from agent import Agent
         from migration import process_migration
         from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+        from disease import (
+            activate_pending_infections, combine_parent_immune_systems,
+            disease_name, process_disease_turn,
+        )
 
 
 class Population:
@@ -72,7 +84,10 @@ class Population:
             birth_turn=world_obj.turnNo + 1,
             religion=random.choice((first_parent.religion, second_parent.religion)),
             region_id=random.choice((first_parent.region, second_parent.region)),
-
+            original_immune_system=combine_parent_immune_systems(
+                first_parent.original_immune_system,
+                second_parent.original_immune_system,
+            ),
         )
         self.next_agent_id += 1
         self.agents.append(newborn)
@@ -161,10 +176,6 @@ class Population:
             first.name, second.name, relationship_points, relationship_stage,
             len(first_locations), len(second_locations)
         ))
-
-        # Close encounters can transmit disease, with risk adjusted for recipient health.
-        self._try_transmission(first, second, world_obj)
-        self._try_transmission(second, first, world_obj)
 
     @staticmethod
     def _are_siblings(first, second):
@@ -271,25 +282,9 @@ class Population:
             giver.wealth, receiver.wealth
         ))
 
-    @staticmethod
-    def _try_transmission(source, target, world_obj):
-        if not source.diseases:
-            return
-        disease = sorted(source.diseases)[0]
-        # Pass world_obj so catch_disease can read active UI sliders
-        if target.catch_disease(world_obj, disease):
-            world_obj.disease_events.append({
-                "turn": world_obj.turnNo + 1,
-                "source_id": source.id,
-                "agent_id": target.id,
-                "disease": disease,
-                "health": target.health,
-            })
-            print("Agent {} caught {} passed by Agent {} (health: {}).".format(
-                target.id, disease, source.id, target.health
-            ))
-
     def step_agents(self, world_obj):
+        activate_pending_infections(self.agents)
+
         # Age advances by the selected calendar interval; survival remains tied
         # to each agent's natural death age, which is measured in years.
         age_increment = getattr(world_obj, "time_step_days", 365.25) / 365.25
@@ -312,19 +307,13 @@ class Population:
 
         # Record sightings after all agents have moved so each pair interacts at
         # most once when they newly enter one another's adjacent sight line.
-        agents_by_id = {agent.id: agent for agent in self.agents}
-        blocked_pairs = set()
         for agent in self.agents:
-            other_agent_id = agent.move(world_obj)
-            if other_agent_id is not None:
-                blocked_pairs.add(tuple(sorted((agent.id, other_agent_id))))
+            agent.move(world_obj)
 
         current_sightings = {agent.id: set() for agent in self.agents}
-        interacted_pairs = set()
         for index, first in enumerate(self.agents):
             for second in self.agents[index + 1:]:
                 if max(abs(first.pos_x - second.pos_x), abs(first.pos_y - second.pos_y)) <= 1:
-                    pair = (first.id, second.id)
                     current_sightings[first.id].add(second.id)
                     current_sightings[second.id].add(first.id)
                     newly_visible = (
@@ -333,22 +322,13 @@ class Population:
                     )
                     if newly_visible:
                         self.share_information(first, second, world_obj)
-                        interacted_pairs.add(pair)
-
-        # Preserve collision-based disease transmission when the pair was
-        # already visible and therefore did not create a new interaction.
-        for first_id, second_id in blocked_pairs - interacted_pairs:
-            first = agents_by_id.get(first_id)
-            second = agents_by_id.get(second_id)
-            if first is not None and second is not None:
-                self._try_transmission(first, second, world_obj)
-                self._try_transmission(second, first, world_obj)
 
         for agent in self.agents:
             agent.visible_agent_ids = current_sightings[agent.id]
         self._process_marriages(world_obj)
         self._process_births(world_obj)
         process_migration(self, world_obj)
+        process_disease_turn(self.agents, world_obj)
         for agent in list(self.agents):
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
@@ -639,11 +619,15 @@ class Population:
             for event in world_obj.disease_events:
                 if event.get("source") == "natural":
                     print("  Turn {}: Agent {} contracted {} naturally".format(
-                        event["turn"], event["agent_id"], event["disease"]
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
+                    ))
+                elif event.get("source") == "user":
+                    print("  Turn {}: Agent {} was exposed to {} by the user".format(
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
                     ))
                 else:
                     print("  Turn {}: Agent {} caught {} passed by Agent {}".format(
-                        event["turn"], event["agent_id"], event["disease"],
+                        event["turn"], event["agent_id"], disease_name(event["disease"]),
                         event["source_id"]
                     ))
         else:
@@ -668,7 +652,9 @@ class Population:
         if world_obj.hospital_events:
             for event in world_obj.hospital_events:
                 x, y = event["position"]
-                diseases = ", ".join(event["diseases"])
+                diseases = ", ".join(
+                    disease_name(disease) for disease in event["diseases"]
+                )
                 if event["outcome"] == "cured":
                     print("  Agent {} admitted on turn {} with {}; cured after {} turn(s) on turn {} at ({}, {}).".format(
                         event["agent_id"], event["admitted_turn"], diseases,
@@ -717,7 +703,9 @@ class Population:
 
         print("\nAgent health:")
         for agent in self.all_agents:
-            diseases = ", ".join(sorted(agent.diseases)) or "none"
+            diseases = ", ".join(
+                disease_name(disease) for disease in sorted(agent.diseases)
+            ) or "none"
             print("  Agent {}: {}/100; diseases: {}".format(agent.id, agent.health, diseases))
 
         print("\nAgent mental health:")
@@ -951,11 +939,15 @@ class Population:
             for event in disease_events:
                 if event.get("source") == "natural":
                     print("  Turn {}: Agent {} contracted {} naturally".format(
-                        event["turn"], event["agent_id"], event["disease"]
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
+                    ))
+                elif event.get("source") == "user":
+                    print("  Turn {}: Agent {} was exposed to {} by the user".format(
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
                     ))
                 else:
                     print("  Turn {}: Agent {} caught {} passed by Agent {}".format(
-                        event["turn"], event["agent_id"], event["disease"],
+                        event["turn"], event["agent_id"], disease_name(event["disease"]),
                         event["source_id"]
                     ))
         else:

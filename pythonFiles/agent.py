@@ -3,28 +3,35 @@ import random
 try:
     from .config import (
         grid_rows, grid_cols, health_min, health_max, starting_health_min,
-        base_disease_transmission, disease_health_impact,
-        disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
-        type_1_income_per_year, type_2_income_per_year,
+        hunger_drain_per_step, starting_wealth,
         low_wealth_threshold, low_wealth_stress_turns,
         grocery_hunger_threshold, grocery_food_cost,
         grocery_food_health_restore, grocery_food_mental_restore,
         mental_health_recovery_per_turn,
         stress_mental_health_initial_drain, stress_mental_health_sustained_drain,
-        hospital_stay_duration_turns, building_names,
+        building_names,
     )
 except ImportError:
     from config import (
         grid_rows, grid_cols, health_min, health_max, starting_health_min,
-        base_disease_transmission, disease_health_impact,
-        disease_chance_per_turn, hunger_drain_per_step, starting_wealth,
-        type_1_income_per_year, type_2_income_per_year,
+        hunger_drain_per_step, starting_wealth,
         low_wealth_threshold, low_wealth_stress_turns,
         grocery_hunger_threshold, grocery_food_cost,
         grocery_food_health_restore, grocery_food_mental_restore,
         mental_health_recovery_per_turn,
         stress_mental_health_initial_drain, stress_mental_health_sustained_drain,
-        hospital_stay_duration_turns, building_names,
+        building_names,
+    )
+
+try:
+    from .disease import (
+        disease_hunger_cost, random_immune_system, disease_name,
+        validate_immune_system,
+    )
+except ImportError:
+    from disease import (
+        disease_hunger_cost, random_immune_system, disease_name,
+        validate_immune_system,
     )
 
 
@@ -109,7 +116,8 @@ def random_religion(ethnicity_percentages):
 class Agent:
     def __init__(self, agent_id, world_obj, rows=None, cols=None, age=None,
                  ethnicity=None, ethnicity_percentages=None, parent_ids=None,
-                 birth_turn=None, religion=None , region_id=None):
+                 birth_turn=None, religion=None, region_id=None,
+                 original_immune_system=None):
         # Dynamically fetch world dimensions from world_obj if not explicitly supplied
         if rows is None:
             rows = getattr(world_obj, "rows", grid_rows)
@@ -138,6 +146,13 @@ class Agent:
         self.last_health_damage_cause = None
         self.diseases = set()
         self.pending_diseases = set()
+        self.original_immune_system = (
+            original_immune_system
+            if original_immune_system is not None
+            else random_immune_system()
+        )
+        validate_immune_system(self.original_immune_system)
+        self.immune_system = self.original_immune_system
 
         self.willpower = random.randint(0, 100)
         self.mental_health = 100
@@ -293,38 +308,6 @@ class Agent:
             return cfg[category].get(key, fallback)
         return cfg.get(key, fallback)
 
-    def disease_transmission_probability(self, world_obj=None, disease=None):
-        """Chance of catching a disease from one infectious close contact."""
-        base_trans = self._get_cfg_val(world_obj, "Health & Disease", "base_disease_transmission",
-                                       base_disease_transmission)
-        contagiousness = (disease or {}).get("contagiousness", base_trans)
-
-        h_min = self._get_cfg_val(world_obj, "Agent & Population", "health_min", health_min)
-        h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
-
-        health_range = h_max - h_min
-        health_fraction = (self.health - h_min) / health_range if health_range else 1.0
-        susceptibility = 1.5 - health_fraction * 0.5
-        return max(0.0, min(1.0, contagiousness * susceptibility))
-
-    def catch_disease(self, world_obj, disease="common_cold", contagiousness=None):
-        """Queue a disease to take effect on the next turn."""
-        if disease in self.diseases or disease in self.pending_diseases:
-            return False
-
-        base_trans = self._get_cfg_val(world_obj, "Health & Disease", "base_disease_transmission",
-                                       base_disease_transmission)
-        if contagiousness is None:
-            contagiousness = base_trans
-
-        prob = self.disease_transmission_probability(world_obj, {"contagiousness": contagiousness})
-        if random.random() >= prob:
-            return False
-
-        # Queue the disease to take effect at the end of the turn cycle
-        self.pending_diseases.add(disease)
-        return True
-
     def damage_health(self, amount, cause, world_obj=None):
         """Reduce health and remember what caused the latest reduction."""
         h_min = self._get_cfg_val(world_obj, "Agent & Population", "health_min", health_min)
@@ -334,49 +317,17 @@ class Agent:
             self.last_health_damage_cause = cause
 
     def update_health(self, world_obj=None):
-        """Apply health changes, including starvation, dynamic disease damage, and stressful events."""
-        # 1. Apply dynamic hunger drain
+        """Apply hunger, starvation, health recovery, and stressful-event effects."""
         hunger_drain = self._get_cfg_val(world_obj, "Grocery & Needs", "hunger_drain_per_step", hunger_drain_per_step)
-        self.hunger = max(0, self.hunger - hunger_drain)
+        self.hunger = max(
+            0, self.hunger - hunger_drain - disease_hunger_cost(self)
+        )
 
-        # 2. Process pending disease infections queued during this turn
-        if self.pending_diseases:
-            disease_impact = self._get_cfg_val(world_obj, "Health & Disease", "disease_health_impact",
-                                               disease_health_impact)
-            for d in self.pending_diseases:
-                self.diseases.add(d)
-                self.damage_health(disease_impact, f"disease: {d}", world_obj)
-            self.pending_diseases.clear()
-
-        # 3. Dynamic natural disease chance
-        disease_chance = self._get_cfg_val(world_obj, "Health & Disease", "disease_chance_per_turn",
-                                           disease_chance_per_turn)
-        disease_impact = self._get_cfg_val(world_obj, "Health & Disease", "disease_health_impact",
-                                           disease_health_impact)
-
-        if not self.diseases and random.random() < disease_chance:
-            disease = "common_cold"
-            self.diseases.add(disease)
-            self.damage_health(disease_impact, f"disease: {disease}", world_obj)
-            if world_obj is not None:
-                world_obj.disease_events.append({
-                    "turn": world_obj.turnNo + 1,
-                    "agent_id": self.id,
-                    "disease": disease,
-                    "source": "natural",
-                    "health": self.health,
-                })
-
-        # 4. Apply disease damage
-        if self.diseases:
-            disease = sorted(self.diseases)[0]
-            self.damage_health(disease_impact, f"disease: {disease}", world_obj)
-        else:
-            h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
-            previous_health = self.health
-            self.health = min(h_max, self.health + 1)
-            if self.health > previous_health:
-                self.last_health_damage_cause = None
+        h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
+        previous_health = self.health
+        self.health = min(h_max, self.health + 1)
+        if self.health > previous_health:
+            self.last_health_damage_cause = None
 
         if self.hunger <= 0:
             self.damage_health(10, "hunger", world_obj)
@@ -562,15 +513,18 @@ class Agent:
         return True
 
     def advance_hospital_stay(self, world_obj):
-        """Cure an admitted agent after one full turn in a hospital."""
+        """Keep an agent hospitalized until immune repair clears every infection."""
         if self.hospitalized_at is None:
             return False
         self.hospital_stay_turns += 1
-        if self.hospital_stay_turns < hospital_stay_duration_turns:
+        if self.diseases or self.pending_diseases:
             return False
 
-        cured_diseases = sorted(self.diseases)
-        self.diseases.clear()
+        cured_diseases = (
+            self.hospital_visit_event["diseases"]
+            if self.hospital_visit_event is not None
+            else ()
+        )
         if self.hospital_visit_event is not None:
             self.hospital_visit_event["cured_turn"] = world_obj.turnNo + 1
             self.hospital_visit_event["turns_in_hospital"] = self.hospital_stay_turns
@@ -583,8 +537,8 @@ class Agent:
             occupants.discard(self.id)
             if world_obj.agent_grid[self.pos_x][self.pos_y] == self.id:
                 world_obj.agent_grid[self.pos_x][self.pos_y] = next(iter(occupants), 0)
-        print("Agent {} completed one turn in the hospital and was cured of {}.".format(
-            self.id, ", ".join(cured_diseases)
+        print("Agent {} completed hospital treatment and recovered from {}.".format(
+            self.id, ", ".join(disease_name(disease) for disease in cured_diseases) or "illness"
         ))
         return True
 
@@ -933,8 +887,10 @@ class Agent:
                 world_obj.hospital_events.append(self.hospital_visit_event)
                 if self.job == "Type 2 job":
                     self.returning_to_job = True
-                print("Agent {} entered the hospital with {}; treatment takes one turn.".format(
-                    self.id, ", ".join(sorted(self.diseases))
+                print("Agent {} entered the hospital with {}; immune repair is accelerated.".format(
+                    self.id, ", ".join(
+                        disease_name(disease) for disease in sorted(self.diseases)
+                    )
                 ))
             elif building_type in (6, 7):
                 if self.house == building_location:

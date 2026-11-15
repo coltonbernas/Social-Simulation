@@ -20,10 +20,7 @@
     "health_max": 100
   },
   "Health & Disease": {
-    "base_disease_transmission": 0.02,
-    "disease_health_impact": 1,
-    "disease_chance_per_turn": 0.001,
-    "hospital_stay_duration_turns": 3
+    "community_case_chance_per_turn": 0.001
   },
     "Economy & Jobs": {
     "type_1_income_per_year": 36525,

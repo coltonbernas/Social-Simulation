@@ -1,5 +1,6 @@
 import csv
 import json
+import random
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -19,15 +20,27 @@ try:  # Support ``python -m pythonFiles.main`` and repo-root imports.
     from pythonFiles.world import World
     from pythonFiles.population import Population
     from pythonFiles.config import building_names
+    from pythonFiles.disease import (
+        DISEASES, disease_name, disease_pattern, disease_progress,
+        introduce_disease, is_immune,
+    )
 except ImportError:
     try:  # Support ``python main.py`` from the pythonFiles directory.
         from world import World
         from population import Population
         from config import building_names
+        from disease import (
+            DISEASES, disease_name, disease_pattern, disease_progress,
+            introduce_disease, is_immune,
+        )
     except ImportError:  # Direct package-relative fallback for some older layouts.
         from ..world import World
         from ..population import Population
         from ..config import building_names
+        from ..disease import (
+            DISEASES, disease_name, disease_pattern, disease_progress,
+            introduce_disease, is_immune,
+        )
 
 TIME_INTERVALS = {
     "Day": 1,
@@ -131,6 +144,8 @@ class SimulationWindow:
                                        command=self.toggle_running)
         self.start_button.pack(side="left", padx=(0, 6))
         ttk.Button(bar, text="Step", command=self.step_once).pack(side="left")
+        ttk.Button(bar, text="Introduce disease",
+                   command=self.open_disease_dialog).pack(side="left", padx=6)
  
         ttk.Label(bar, text="Batch", style="Muted.TLabel").pack(side="left", padx=(14, 4))
         self.batch_size = tk.StringVar(value="10")
@@ -287,6 +302,140 @@ class SimulationWindow:
         self.turn_label.pack(side="right")
  
     # ------------------------------------------------- 3. simulation control
+    def open_disease_dialog(self):
+        if self.world is None or self.population is None:
+            messagebox.showinfo("Introduce disease", "Start a simulation first.")
+            return
+        if not self.population.agents:
+            messagebox.showinfo("Introduce disease", "There are no living agents to infect.")
+            return
+        if self._finished():
+            messagebox.showinfo(
+                "Introduce disease",
+                "The simulation has ended. Reset it before introducing a disease.",
+            )
+            return
+
+        was_running = self.running
+        if was_running:
+            self.stop()
+
+        disease_ids_by_name = {
+            disease.name: disease_id for disease_id, disease in DISEASES.items()
+        }
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Introduce disease")
+        dialog.transient(self.root)
+        dialog.configure(bg=BG)
+        dialog.resizable(False, False)
+
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Choose a disease and an agent to expose.",
+                  style="Muted.TLabel").grid(row=0, column=0, columnspan=2,
+                                             sticky="w", pady=(0, 10))
+        ttk.Label(frame, text="Disease").grid(row=1, column=0, sticky="w", padx=(0, 10))
+        disease_var = tk.StringVar(value=next(iter(disease_ids_by_name)))
+        disease_box = ttk.Combobox(
+            frame, textvariable=disease_var,
+            values=tuple(disease_ids_by_name), state="readonly", width=28,
+        )
+        disease_box.grid(row=1, column=1, sticky="ew", pady=4)
+
+        ttk.Label(frame, text="Agent").grid(row=2, column=0, sticky="w", padx=(0, 10))
+        agent_var = tk.StringVar()
+        agent_box = ttk.Combobox(
+            frame, textvariable=agent_var, state="readonly", width=28,
+        )
+        agent_box.grid(row=2, column=1, sticky="ew", pady=4)
+        hint = ttk.Label(frame, text="", style="Muted.TLabel")
+        hint.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 10))
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(6, 0))
+        agent_ids_by_label = {}
+        submit_button = ttk.Button(buttons, text="Expose agent")
+
+        def eligible_agents(disease_id):
+            return [
+                agent for agent in sorted(self.population.agents, key=lambda item: item.id)
+                if disease_id not in agent.diseases
+                and disease_id not in agent.pending_diseases
+                and not is_immune(agent.immune_system, disease_id)
+            ]
+
+        def update_agent_choices(_event=None):
+            disease_id = disease_ids_by_name[disease_var.get()]
+            eligible = eligible_agents(disease_id)
+            agent_ids_by_label.clear()
+            choices = []
+            if eligible:
+                choices.append("Random susceptible agent")
+                agent_ids_by_label["Random susceptible agent"] = None
+                for agent in eligible:
+                    label = "Agent {} (age {})".format(agent.id, agent.age)
+                    choices.append(label)
+                    agent_ids_by_label[label] = agent.id
+                agent_var.set(choices[0])
+                hint.configure(text="The agent becomes ill on the next turn.")
+                submit_button.configure(state="normal")
+            else:
+                choices.append("No susceptible agents")
+                agent_var.set(choices[0])
+                hint.configure(text="Every living agent is immune or already has this disease.")
+                submit_button.configure(state="disabled")
+            agent_box.configure(values=choices)
+
+        def submit():
+            disease_id = disease_ids_by_name[disease_var.get()]
+            eligible = eligible_agents(disease_id)
+            selected_id = agent_ids_by_label.get(agent_var.get())
+            if selected_id is None:
+                if not eligible:
+                    update_agent_choices()
+                    return
+                agent = random.choice(eligible)
+            else:
+                agent = next(
+                    (candidate for candidate in eligible if candidate.id == selected_id),
+                    None,
+                )
+                if agent is None:
+                    update_agent_choices()
+                    return
+            if not introduce_disease(agent, disease_id, self.world):
+                update_agent_choices()
+                return
+
+            self.selected_id = agent.id
+            self.tree.selection_set(str(agent.id))
+            self.tree.see(str(agent.id))
+            self.refresh_agent_table()
+            self.refresh_agent_detail()
+            self.draw()
+            self._log(
+                "Turn {}: Agent {} was exposed to {} by the user; illness begins next turn.".format(
+                    self.world.turnNo + 1, agent.id, disease_name(disease_id)
+                ),
+                "health",
+            )
+            dialog.destroy()
+
+        disease_box.bind("<<ComboboxSelected>>", update_agent_choices)
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
+        submit_button.configure(command=submit)
+        submit_button.pack(side="right", padx=(0, 6))
+        frame.columnconfigure(1, weight=1)
+        update_agent_choices()
+        dialog.grab_set()
+        dialog.focus_set()
+        self.root.wait_window(dialog)
+
+        if was_running and not self._finished():
+            self.running = True
+            self.start_button.configure(text="⏸  Pause")
+            self._schedule_step()
+
     def reset(self, active_config=None):
         self.stop()
         if self.world is not None and not self.final_reported:
@@ -546,12 +695,18 @@ class SimulationWindow:
             self._log("Turn {}: Agent {} {}; the {} reopened.".format(
                 e["turn"], e["agent_id"], e["reason"], e["job"]), "jobs")
         for e in new("disease_events"):
-            how = "naturally" if e.get("source") == "natural" else "from Agent {}".format(e["source_id"])
+            if e.get("source") == "natural":
+                how = "naturally"
+            elif e.get("source") == "user":
+                how = "by the user"
+            else:
+                how = "from Agent {}".format(e["source_id"])
             self._log("Turn {}: Agent {} caught {} {}.".format(
-                e["turn"], e["agent_id"], e["disease"], how), "health")
+                e["turn"], e["agent_id"], disease_name(e["disease"]), how), "health")
         for e in new("hospital_events"):
             self._log("Turn {}: Agent {} admitted to hospital with {}.".format(
-                e["admitted_turn"], e["agent_id"], ", ".join(e["diseases"])), "health")
+                e["admitted_turn"], e["agent_id"],
+                ", ".join(disease_name(d) for d in e["diseases"])), "health")
         for e in new("school_events"):
             text = ("enrolled in school" if e["event"] == "enrolled"
                     else "graduated (intelligence {})".format(e["intelligence"]))
@@ -731,7 +886,20 @@ class SimulationWindow:
             ("Region", self.world.regions[agent.region]["name"]),
             ("Born in", self.world.regions[agent.birth_region]["name"]),
             ("Has migrated", "yes" if agent.has_migrated else "no"),
-            ("Diseases", ", ".join(sorted(agent.diseases)) or "none"),
+            ("Diseases", ", ".join(
+                disease_name(disease) for disease in sorted(agent.diseases)
+            ) or "none"),
+            ("Exposed diseases (starts next turn)", ", ".join(
+                disease_name(disease) for disease in sorted(agent.pending_diseases)
+            ) or "none"),
+            ("Disease progress", "; ".join(
+                "{} [{}]: {} bit(s) to repair of {}".format(
+                    disease_name(disease),
+                    disease_pattern(disease),
+                    *disease_progress(agent.immune_system, disease),
+                )
+                for disease in sorted(agent.diseases)
+            ) or "none"),
             ("Intelligence / willpower", "{} / {}".format(agent.intelligence, agent.willpower)),
             ("Dating", "Agent {}".format(agent.dating_partner_id)
              if agent.dating_partner_id else "single"),

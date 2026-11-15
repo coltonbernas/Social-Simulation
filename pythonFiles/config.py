@@ -41,9 +41,11 @@ agent_count = config["Agent & Population"]["agent_count"]
 health_min = config.get("health_min", 0)
 health_max = config.get("health_max", 100)
 starting_health_min = config.get("starting_health_min", 50)
-base_disease_transmission = config.get("base_disease_transmission", 0.20)
-disease_health_impact = config.get("disease_health_impact", 20)
-disease_chance_per_turn = config.get("disease_chance_per_turn", 0.5)
+disease_config = config.get("Health & Disease", {})
+disease_chance_per_turn = disease_config.get(
+    "community_case_chance_per_turn",
+    config.get("disease_chance_per_turn", 0.5),
+)
 hunger_drain_per_step = config.get("hunger_drain_per_step", 5)
 starting_wealth = config.get("starting_wealth", 0)
 _days_per_year = 365.25
@@ -62,7 +64,6 @@ grocery_food_mental_restore = config.get("grocery_food_mental_restore", 25)
 mental_health_recovery_per_turn = config.get("mental_health_recovery_per_turn", 1)
 stress_mental_health_initial_drain = config.get("stress_mental_health_initial_drain", 5)
 stress_mental_health_sustained_drain = config.get("stress_mental_health_sustained_drain", 2)
-hospital_stay_duration_turns = config.get("hospital_stay_duration_turns", 3)
 building_names = {
     1: "Type 1 Workplace",
     2: "Type 2 Workplace",
