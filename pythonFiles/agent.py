@@ -380,7 +380,7 @@ class Agent:
         if self.hunger <= 0:
             self.damage_health(10, "hunger", world_obj)
 
-        self.update_stressful_events()
+        self.update_stressful_events(world_obj)
 
     def earn_income(self, world_obj):
         """Add this turn's wages, scaled by the home region's wage multiplier."""
@@ -423,12 +423,26 @@ class Agent:
         )
         return school_nearby or not available_jobs
 
-    def update_stressful_events(self):
+    def update_stressful_events(self, world_obj=None):
         """Apply immediate and sustained mental-health costs from stressors."""
+        wealth_line = self._get_cfg_val(
+            world_obj, "Economy & Jobs", "low_wealth_threshold", low_wealth_threshold)
+        stress_turns = self._get_cfg_val(
+            world_obj, "Economy & Jobs", "low_wealth_stress_turns", low_wealth_stress_turns)
+        initial_drain = self._get_cfg_val(
+            world_obj, "Mental Health & Stress", "stress_mental_health_initial_drain",
+            stress_mental_health_initial_drain)
+        sustained_drain = self._get_cfg_val(
+            world_obj, "Mental Health & Stress", "stress_mental_health_sustained_drain",
+            stress_mental_health_sustained_drain)
+        recovery = self._get_cfg_val(
+            world_obj, "Mental Health & Stress", "mental_health_recovery_per_turn",
+            mental_health_recovery_per_turn)
+
         current_events = set()
-        if self.wealth < low_wealth_threshold:
+        if self.wealth < wealth_line:
             self.low_wealth_turns += 1
-            if self.low_wealth_turns > low_wealth_stress_turns:
+            if self.low_wealth_turns > stress_turns:
                 current_events.add("low_wealth")
         else:
             self.low_wealth_turns = 0
@@ -440,18 +454,16 @@ class Agent:
                 # A new stressful event has an immediate impact.
                 self.mental_health = max(
                     0, self.mental_health
-                    - stress_mental_health_initial_drain * (1 - self.resilience)
+                    - initial_drain * (1 - self.resilience)
                 )
             else:
                 # The impact continues on every turn the event remains active.
                 self.mental_health = max(
                     0, self.mental_health
-                    - stress_mental_health_sustained_drain * (1 - self.resilience)
+                    - sustained_drain * (1 - self.resilience)
                 )
         if not current_events:
-            self.mental_health = min(
-                100, self.mental_health + mental_health_recovery_per_turn
-            )
+            self.mental_health = min(100, self.mental_health + recovery)
         self.active_stressful_events = current_events
 
     def can_buy_food(self, world_obj):
@@ -560,7 +572,10 @@ class Agent:
         if self.hospitalized_at is None:
             return False
         self.hospital_stay_turns += 1
-        if self.hospital_stay_turns < hospital_stay_duration_turns:
+        stay_length = self._get_cfg_val(
+            world_obj, "Health & Disease", "hospital_stay_duration_turns",
+            hospital_stay_duration_turns)
+        if self.hospital_stay_turns < stay_length:
             return False
 
         cured_diseases = sorted(self.diseases)
