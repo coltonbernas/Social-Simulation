@@ -441,6 +441,22 @@ class World:
                 return economy[legacy_key] * 365.25
         return job_income_per_year[building_type]
 
+    def job_application_threshold(self, building_type):
+        key = {
+            1: "type_1_application_threshold",
+            2: "type_2_application_threshold",
+            4: "grocery_store_application_threshold",
+            5: "hospital_application_threshold",
+            8: "type_3_application_threshold",
+            9: "type_4_application_threshold",
+            10: "type_5_application_threshold",
+        }[building_type]
+        economy = self.config.get("Economy & Jobs", {})
+        if key in economy:
+            return economy[key]
+        annual_income = self.job_income_per_year(building_type)
+        return max(50, min(90, 60 + (annual_income - 36525) * 13 / (91312 - 36525)))
+
     def house_cost(self, house_type, region_id):
         key = "budget_house_cost" if house_type == 6 else "premium_house_cost"
         base = self._setting("Economy & Jobs", key, 300 if house_type == 6 else 700)

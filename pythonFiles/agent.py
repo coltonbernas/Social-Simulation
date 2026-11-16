@@ -957,8 +957,7 @@ class Agent:
             + health_score * weights["health"]
         )
         application_score = weighted_total / sum(weights.values())
-        annual_income = world_obj.job_income_per_year(building_type)
-        minimum_score = max(50, min(90, 60 + (annual_income - 36525) * 13 / (91312 - 36525)))
+        minimum_score = world_obj.job_application_threshold(building_type)
         hired = application_score >= minimum_score
         job_title = world_obj.job_name(building_type)
         event = {
