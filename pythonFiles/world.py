@@ -217,6 +217,8 @@ class World:
             "type_3_workplace": 8,
             "type_4_workplace": 9,
             "type_5_workplace": 10,
+            "apartment_building": 11,
+            "hotel": 12,
         }
         for name, building_type in names_to_types.items():
             if name in counts:
@@ -249,7 +251,7 @@ class World:
             center_col = (region["col_start"] + region["col_end"]) / 2
             # Keep workplaces, hospitals, and grocery stores in the compact
             # downtown core, with schools and homes near residential clusters.
-            if building_type in (1, 2, 4, 5, 8, 9, 10):
+            if building_type in (1, 2, 4, 5, 8, 9, 10, 12):
                 candidates = [cell for cell in cells
                               if max(abs(cell[0] - center_row),
                                      abs(cell[1] - center_col)) <= 1.5]
@@ -291,7 +293,7 @@ class World:
             free_cells.remove(selected)
             placed.append((building_type, selected))
             region_building_counts[region["id"]] += 1
-            if building_type in (6, 7):
+            if building_type in (6, 7, 11):
                 centers = neighborhood_centers(region)
                 selected_neighborhood = min(
                     range(len(centers)),
@@ -304,7 +306,7 @@ class World:
         # Seed each downtown with a mix of requested major uses before filling
         # in the extra Type 1 workplaces and other buildings.
         for region in self.regions:
-            for wanted in (1, 2, 4, 5, 6, 8, 9, 10):
+            for wanted in (1, 2, 4, 5, 6, 8, 9, 10, 11, 12):
                 if wanted in requested_types and place(wanted, region):
                     requested_types.remove(wanted)
 
@@ -335,7 +337,7 @@ class World:
             elif building_type == 5:
                 self.hospitals.add(location)
                 self.hospital_occupants[location] = set()
-            elif building_type in (6, 7):
+            elif building_type in (6, 7, 11, 12):
                 self.houses[location] = set()
             if building_type in (1, 2, 4, 5, 8, 9, 10):
                 capacity = {1: 1, 2: 1, 4: 2, 5: 2, 8: 2, 9: 3, 10: 1}[building_type]
@@ -462,11 +464,24 @@ class World:
         return max(50, min(90, 60 + (annual_income - 36525) * 13 / (91312 - 36525)))
 
     def house_cost(self, house_type, region_id):
-        key = "budget_house_cost" if house_type == 6 else "premium_house_cost"
-        base = self._setting("Economy & Jobs", key, 300 if house_type == 6 else 700)
+        house_prices = {
+            6: ("budget_house_cost", 300),
+            7: ("premium_house_cost", 700),
+        }
+        if house_type in (11, 12):
+            key = "apartment_rent_per_day" if house_type == 11 else "hotel_rent_per_day"
+            daily_rate = self._setting("Economy & Jobs", key, 200 if house_type == 11 else 100)
+            base = daily_rate * 4
+        else:
+            key, fallback = house_prices[house_type]
+            base = self._setting("Economy & Jobs", key, fallback)
         region = self.regions[region_id]
         return int(round(base * region["cost_multiplier"]
                          * region.get("housing_price_factor", 1.0)))
+
+    def can_accept_resident(self, location):
+        capacity = 5 if self.grid[location[0]][location[1]] == 11 else None
+        return capacity is None or len(self.houses[location]) < capacity
 
     def food_cost(self, region_id, agent=None):
         base = self._setting("Grocery & Needs", "grocery_food_cost", grocery_food_cost)

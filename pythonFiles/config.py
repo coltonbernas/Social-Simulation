@@ -17,6 +17,8 @@ _default_building_counts = {
     "type_3_workplace": 1,
     "type_4_workplace": 1,
     "type_5_workplace": 1,
+    "apartment_building": 2,
+    "hotel": 2,
     "school": 1,
     "grocery_store": 1,
     "hospital": 1,
@@ -78,6 +80,8 @@ building_names = {
     8: "Type 3 Workplace",
     9: "Type 4 Workplace",
     10: "Type 5 Workplace",
+    11: "Apartment Building",
+    12: "Hotel",
 }
 
 job_names = {

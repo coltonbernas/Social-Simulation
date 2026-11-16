@@ -413,11 +413,13 @@ class Agent:
         return self.wealth >= cost and self.hunger < threshold
 
     def buy_house(self, world_obj, location):
-        """Purchase an available house by paying its four-turn rent upfront."""
+        """Rent an available home by paying its first four days upfront."""
         house_type = world_obj.grid[location[0]][location[1]]
-        if self.house is not None or house_type not in (6, 7):
+        if self.house is not None or house_type not in (6, 7, 11, 12):
             return False
         if not self.in_my_region(world_obj, location):
+            return False
+        if not world_obj.can_accept_resident(location):
             return False
         cost = world_obj.house_cost(house_type, self.region)
         if self.wealth < cost:
@@ -442,7 +444,7 @@ class Agent:
             return
         house_type = world_obj.grid[self.house[0]][self.house[1]]
         if (self.pos_x, self.pos_y) == self.house:
-            self.mental_health = min(100, self.mental_health + (5 if house_type == 6 else 15))
+            self.mental_health = min(100, self.mental_health + (5 if house_type in (6, 11) else 15))
         self.house_rent_days += getattr(world_obj, "time_step_days", 1.0)
         rent_periods = int(self.house_rent_days // 4)
         if rent_periods < 1:
@@ -637,6 +639,7 @@ class Agent:
             affordable_houses = [
                 location for location in world_obj.houses
                 if self.in_my_region(world_obj, location)
+                   and world_obj.can_accept_resident(location)
                    and self.wealth >= world_obj.house_cost(
                     world_obj.grid[location[0]][location[1]], self.region)
             ]
@@ -676,7 +679,7 @@ class Agent:
 
         if (target_x, target_y) == (self.pos_x, self.pos_y):
             if (self.house is None
-                    and world_obj.grid[self.pos_x][self.pos_y] in (6, 7)):
+                    and world_obj.grid[self.pos_x][self.pos_y] in (6, 7, 11, 12)):
                 self.buy_house(world_obj, (self.pos_x, self.pos_y))
                 if self.house is not None:
                     return None
@@ -735,7 +738,7 @@ class Agent:
             if destination == (self.pos_x, self.pos_y):
                 continue
             if (world_obj.agent_grid[next_x][next_y] not in (0, self.id)
-                    and world_obj.grid[next_x][next_y] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)):
+                    and world_obj.grid[next_x][next_y] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)):
                 blocked_moves.append(move)
                 continue
             fallback_moves.append(move)
@@ -807,7 +810,7 @@ class Agent:
         next_y = max(0, min(cols - 1, self.pos_y + dy))
         other_agent_id = world_obj.agent_grid[next_x][next_y]
         if (other_agent_id not in (0, self.id)
-                and world_obj.grid[next_x][next_y] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)):
+                and world_obj.grid[next_x][next_y] not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)):
             print("Agent {} bumped into Agent {} at ({}, {}).".format(
                 self.id, other_agent_id, next_x, next_y
             ))
@@ -844,7 +847,7 @@ class Agent:
         self.position_visits[new_position] = self.position_visits.get(new_position, 0) + 1
 
         building_location = (self.pos_x, self.pos_y)
-        if world_obj.grid[self.pos_x][self.pos_y] in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        if world_obj.grid[self.pos_x][self.pos_y] in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
             occupants = world_obj.workplace_occupants.get(building_location)
             if occupants is None:
                 occupants = world_obj.school_occupants.get(building_location)
@@ -899,7 +902,7 @@ class Agent:
                         disease_name(disease) for disease in sorted(self.diseases)
                     )
                 ))
-            elif building_type in (6, 7):
+            elif building_type in (6, 7, 11, 12):
                 if self.house == building_location:
                     return None
                 self.buy_house(world_obj, building_location)
