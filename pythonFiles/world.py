@@ -110,7 +110,7 @@ class World:
         return any(
             len(holders) < self.job_capacities[location]
             and any(
-                agent.can_apply_for_type(self.grid[location[0]][location[1]])
+                agent.can_apply_for_type(self.grid[location[0]][location[1]], self)
                 and agent.applied_buildings.get(location)
                 != self.job_opening_versions[location]
                 for agent in agents
@@ -426,6 +426,10 @@ class World:
 
     def job_name(self, building_type):
         return job_names[building_type]
+
+    def job_type(self, job):
+        return next((building_type for building_type, name in job_names.items()
+                     if name == job), None)
 
     def job_income_per_year(self, building_type):
         key = {1: "type_1_income_per_year", 2: "type_2_income_per_year",

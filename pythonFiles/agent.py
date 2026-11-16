@@ -364,7 +364,7 @@ class Agent:
         available_jobs = [
             location for location, holders in world_obj.building_jobs.items()
             if len(holders) < world_obj.job_capacities[location]
-               and self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
+               and self.can_apply_for_type(world_obj.grid[location[0]][location[1]], world_obj)
                and self.applied_buildings.get(location)
                != world_obj.job_opening_versions[location]
                and self.in_my_region(world_obj, location)
@@ -555,9 +555,11 @@ class Agent:
         if self.hospitalized_at is not None:
             print("Agent {} is staying in the hospital for treatment.".format(self.id))
             return None
+        higher_job_available = self.has_higher_paying_job(world_obj)
         if (self.job == "Type 2 job" and not self.can_buy_food(world_obj)
                 and not self.diseases
-                and not self.returning_to_job):
+                and not self.returning_to_job
+                and not higher_job_available):
             print("Agent {} is staying at their type 2 job.".format(self.id))
             return None
         if (self.job == "Type 2 job" and self.returning_to_job
@@ -574,13 +576,14 @@ class Agent:
 
         # A resident stays home unless a health or food need sends them out.
         if (self.house is not None and (self.pos_x, self.pos_y) == self.house
-                and not self.diseases and not self.can_buy_food(world_obj)):
+                and not self.diseases and not self.can_buy_food(world_obj)
+                and not higher_job_available):
             return None
 
         visible_buildings = self.scan_surroundings(world_obj, rows, cols)
         job_targets = [
             location for location, job_holders in world_obj.building_jobs.items()
-            if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
+            if self.can_apply_for_type(world_obj.grid[location[0]][location[1]], world_obj)
                and self.applied_buildings.get(location)
                != world_obj.job_opening_versions[location]
                and len(job_holders) < world_obj.job_capacities[location]
@@ -684,7 +687,7 @@ class Agent:
             )
             job_targets = [
                 location for location, job_holders in world_obj.building_jobs.items()
-                if self.can_apply_for_type(world_obj.grid[location[0]][location[1]])
+                if self.can_apply_for_type(world_obj.grid[location[0]][location[1]], world_obj)
                    and self.applied_buildings.get(location)
                    != world_obj.job_opening_versions[location]
                    and len(job_holders) < world_obj.job_capacities[location]
@@ -919,15 +922,30 @@ class Agent:
         ))
         return True
 
-    def can_apply_for_type(self, building_type):
-        """Unemployed agents can apply anywhere; type 1 employees seek type 2."""
+    def has_higher_paying_job(self, world_obj):
+        """Return whether a reachable, untried opening pays more than this agent's job."""
+        return any(
+            len(holders) < world_obj.job_capacities[location]
+            and self.can_apply_for_type(world_obj.grid[location[0]][location[1]], world_obj)
+            and self.applied_buildings.get(location) != world_obj.job_opening_versions[location]
+            and self.in_my_region(world_obj, location)
+            for location, holders in world_obj.building_jobs.items()
+        )
+
+    def can_apply_for_type(self, building_type, world_obj):
+        """Unemployed agents can apply anywhere; employees can apply for higher pay."""
         if self.job is None:
             return True
-        return self.job == "Type 1 job" and building_type != 1
+        if self.job == "Hospital job":
+            return False
+        current_type = world_obj.job_type(self.job)
+        return (current_type is not None
+                and world_obj.job_income_per_year(building_type)
+                > world_obj.job_income_per_year(current_type))
 
     def apply_for_job(self, world_obj, building_type, building_location):
         """Apply once per opening using intelligence, willpower and health."""
-        if not self.can_apply_for_type(building_type):
+        if not self.can_apply_for_type(building_type, world_obj):
             return False
         if not self.in_my_region(world_obj, building_location):
             return False
