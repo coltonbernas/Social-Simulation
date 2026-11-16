@@ -444,7 +444,8 @@ class Agent:
             return
         house_type = world_obj.grid[self.house[0]][self.house[1]]
         if (self.pos_x, self.pos_y) == self.house:
-            self.mental_health = min(100, self.mental_health + (5 if house_type in (6, 11) else 15))
+            housing_recovery = {6: 5, 7: 15, 11: 2, 12: 0}.get(house_type, 0)
+            self.mental_health = min(100, self.mental_health + housing_recovery)
         self.house_rent_days += getattr(world_obj, "time_step_days", 1.0)
         rent_periods = int(self.house_rent_days // 4)
         if rent_periods < 1:
