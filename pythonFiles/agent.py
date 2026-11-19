@@ -421,13 +421,14 @@ class Agent:
             return False
         if not self.in_my_region(world_obj, location):
             return False
-        if not world_obj.can_accept_resident(location):
+        if not world_obj.can_accept_resident(location, self):
             return False
         cost = world_obj.house_cost(house_type, self.region)
         if self.wealth < cost:
             return False
         self.wealth -= cost
         self.house = location
+        world_obj.house_owners.setdefault(location, self.id)
         self.house_turns_since_payment = 0
         self.house_rent_days = 0.0
         world_obj.houses[location].add(self.id)
@@ -643,7 +644,7 @@ class Agent:
             affordable_houses = [
                 location for location in world_obj.houses
                 if self.in_my_region(world_obj, location)
-                   and world_obj.can_accept_resident(location)
+                   and world_obj.can_accept_resident(location, self)
                    and self.wealth >= world_obj.house_cost(
                     world_obj.grid[location[0]][location[1]], self.region)
             ]

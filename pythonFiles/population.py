@@ -38,6 +38,7 @@ class Population:
 
         self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
         self.all_agents = list(self.agents)
+        world_obj.agent_lookup = {agent.id: agent for agent in self.all_agents}
         self.next_agent_id = count
         self.pregnancies = {}
 
@@ -52,6 +53,7 @@ class Population:
         self.next_agent_id += 1
         self.agents.append(newborn)
         self.all_agents.append(newborn)
+        world_obj.agent_lookup[newborn.id] = newborn
         return newborn
 
     def birth_child(self, world_obj, first_parent, second_parent):
@@ -93,6 +95,7 @@ class Population:
         self.next_agent_id += 1
         self.agents.append(newborn)
         self.all_agents.append(newborn)
+        world_obj.agent_lookup[newborn.id] = newborn
         first_parent.children_ids.add(newborn.id)
         second_parent.children_ids.add(newborn.id)
         world_obj.birth_events.append({

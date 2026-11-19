@@ -77,6 +77,8 @@ class World:
         self.hospitals = set()
         self.hospital_occupants = {}
         self.houses = {}
+        self.house_owners = {}
+        self.agent_lookup = {}
 
         self.house_events = []
         self.hospital_events = []
@@ -512,10 +514,20 @@ class World:
                 region["treasury"] -= pay
                 agent.wealth += pay
 
-    def can_accept_resident(self, location):
-        building_type = self.grid[location[0]][location[1]]
-        capacity = 5 if building_type == 11 else 6 if building_type == 12 else None
-        return capacity is None or len(self.houses[location]) < capacity
+    def can_accept_resident(self, location, agent=None):
+        """Allow up to six household members, limited to the owner's family/partner."""
+        owner_id = self.house_owners.get(location)
+        residents = [
+            resident for resident in self.agent_lookup.values()
+            if resident.house == location
+        ]
+        if len(residents) >= 6:
+            return False
+        if owner_id is None or agent is None:
+            return True
+        return (agent.id == owner_id
+                or agent.dating_partner_id == owner_id
+                or owner_id in agent.parent_ids)
 
     def food_cost(self, region_id, agent=None):
         base = self._setting("Grocery & Needs", "grocery_food_cost", grocery_food_cost)
