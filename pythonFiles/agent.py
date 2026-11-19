@@ -188,6 +188,9 @@ class Agent:
         self.birth_turn = birth_turn
         self.has_migrated = False
         self.migration_history = []   # one dict per move: turn, from/to region, cost, wealth_after
+        self.migration_target_region = None
+        self.migration_target_position = None
+        self.migration_source_region = None
         self.personality_type = random.choice((
             "introverted", "extroverted", "ambivert"
         ))
@@ -558,6 +561,10 @@ class Agent:
             rows = getattr(world_obj, "rows", grid_rows)
         if cols is None:
             cols = getattr(world_obj, "cols", grid_cols)
+
+        # Migration advances one neighboring tile at a time in process_migration.
+        if self.migration_target_region is not None:
+            return None
 
         if self.hospitalized_at is not None:
             print("Agent {} is staying in the hospital for treatment.".format(self.id))

@@ -1,4 +1,5 @@
 {
+    "start_with_predefined_positions": false,
   "World Settings": {
     "rows": 20,
     "cols": 20

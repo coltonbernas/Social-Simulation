@@ -6,7 +6,7 @@ try:
     from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
     from .disease import (
         activate_pending_infections, combine_parent_immune_systems,
-        disease_name, process_disease_turn,
+        disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
     )
 except ImportError:
     try:
@@ -15,7 +15,7 @@ except ImportError:
         from pythonFiles.config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
         from pythonFiles.disease import (
             activate_pending_infections, combine_parent_immune_systems,
-            disease_name, process_disease_turn,
+            disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
         )
     except ImportError:
         from agent import Agent
@@ -23,7 +23,7 @@ except ImportError:
         from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
         from disease import (
             activate_pending_infections, combine_parent_immune_systems,
-            disease_name, process_disease_turn,
+            disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
         )
 
 
@@ -36,11 +36,137 @@ class Population:
             agent_cfg = config.get("Agent & Population", config) if isinstance(config, dict) else {}
             count = agent_cfg.get("agent_count", config.get("agent_count", agent_count))
 
-        self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
+        predefined = bool(getattr(world_obj, "config", {}).get(
+            "start_with_predefined_positions", False
+        ))
+        self.agents = [
+            Agent(agent_id=i, world_obj=world_obj,
+                  age=random.randint(1, 80) if predefined else None)
+            for i in range(count)
+        ]
         self.all_agents = list(self.agents)
         world_obj.agent_lookup = {agent.id: agent for agent in self.all_agents}
         self.next_agent_id = count
         self.pregnancies = {}
+        if predefined:
+            self._initialize_predefined_start(world_obj)
+
+    def _initialize_predefined_start(self, world_obj):
+        """Seed a varied starting population while preserving normal agent traits."""
+        # Pair some agents, with married and dating relationships represented
+        # using the same fields as relationships formed during play.
+        shuffled = list(self.agents)
+        random.shuffle(shuffled)
+        household_groups = []
+        index = 0
+        while index + 1 < len(shuffled):
+            if random.random() < 0.45:
+                first, second = shuffled[index:index + 2]
+                index += 2
+                first.dating_partner_id = second.id
+                second.dating_partner_id = first.id
+                first.dating_since_turn = second.dating_since_turn = world_obj.turnNo
+                if random.random() < 0.5:
+                    first.marital_status = second.marital_status = "married"
+                household_groups.append([first, second])
+            else:
+                household_groups.append([shuffled[index]])
+                index += 1
+        if index < len(shuffled):
+            household_groups.append([shuffled[index]])
+
+        # Give some minors a parent from an older household, so shared homes
+        # follow the same owner/partner/child rule as homes acquired later.
+        for child in [agent for agent in shuffled if agent.age < 18]:
+            if random.random() >= 0.65:
+                continue
+            existing_group = next(
+                (group for group in household_groups if child in group), None
+            )
+            if existing_group is not None and len(existing_group) > 1:
+                continue
+            possible_groups = [
+                group for group in household_groups
+                if len(group) < 6
+                and group[0].age >= 25
+                and group[0].region == child.region
+                and child not in group
+            ]
+            if not possible_groups:
+                continue
+            group = random.choice(possible_groups)
+            parent = group[0]
+            child.parent_ids.add(parent.id)
+            parent.children_ids.add(child.id)
+            group.append(child)
+            if existing_group is not None:
+                household_groups.remove(existing_group)
+
+        # Jobs are assigned from real openings, with jobless agents and the two
+        # less common job types weighted lower than the other available jobs.
+        for agent in self.agents:
+            if agent.age < 15:
+                continue
+            openings = [
+                (location, world_obj.grid[location[0]][location[1]])
+                for location, holders in world_obj.building_jobs.items()
+                for _ in range(max(0, world_obj.job_capacities[location] - len(holders)))
+            ]
+            if not openings or random.random() < 0.25:
+                continue
+            selected = random.choices(
+                openings,
+                weights=[0.2 if opening[1] in (2, 5) else 1.0
+                         for opening in openings],
+                k=1,
+            )[0]
+            location, building_type = selected
+            world_obj.building_jobs[location].add(agent.id)
+            agent.job = world_obj.job_name(building_type)
+            agent.employed_at = location
+
+        for agent in self.agents:
+            building_type = world_obj.job_type(agent.job) if agent.job else None
+            annual_wage = (
+                world_obj.job_income_per_year(building_type)
+                * world_obj.regions[agent.region]["wage_multiplier"]
+                if building_type is not None else 0
+            )
+            midpoint = annual_wage * agent.age
+            agent.wealth = int(round(midpoint * random.uniform(0.5, 1.5)))
+
+            if random.random() < 0.10:
+                susceptible = [
+                    disease for disease in DISEASE_ORDER
+                    if not is_immune(agent.immune_system, disease)
+                ]
+                if susceptible:
+                    agent.diseases.add(random.choice(susceptible))
+
+        # Each household gets a randomly selected available home. Premium
+        # houses (type 7) are deliberately less likely than other home types.
+        for group in household_groups:
+            if len(group) > 6 or len({agent.region for agent in group}) != 1:
+                continue
+            region_id = group[0].region
+            choices = [
+                location for location in world_obj.houses
+                if world_obj.region_of(*location) == region_id
+                and not any(agent.house == location for agent in self.agents)
+            ]
+            if not choices:
+                continue
+            location = random.choices(
+                choices,
+                weights=[0.2 if world_obj.grid[row][col] == 7 else 1.0
+                         for row, col in choices],
+                k=1,
+            )[0]
+            owner = next((agent for agent in group if agent.age >= 18), group[0])
+            world_obj.house_owners[location] = owner.id
+            for agent in group:
+                agent.house = location
+                world_obj.houses[location].add(agent.id)
 
     def birth(self, world_obj):
         """Create and add a newborn agent whose age is exactly 0."""

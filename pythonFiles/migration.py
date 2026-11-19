@@ -30,7 +30,9 @@ def connections_who_moved(agent, by_id):
 
 
 def move_agent(agent, world_obj, dest_id, cost, refugee=False):
-    """Move an agent to another region; drop job/house/school. Refugees risk their health."""
+    """Begin a migration; the agent walks to a destination over adjacent tiles."""
+    if agent.migration_target_region is not None:
+        return False
     try:
         spot = agent.get_safe_spawn_pos(world_obj, world_obj.rows, world_obj.cols, dest_id)
     except RuntimeError:
@@ -77,30 +79,123 @@ def move_agent(agent, world_obj, dest_id, cost, refugee=False):
         agent.school_turns = 0
     agent.applied_buildings.clear()
 
-    agent.region = dest_id
-    agent.pos_x, agent.pos_y = spot
-    agent.previous_position = None
-    agent.visited_positions.add(spot)
-    world_obj.agent_grid[spot[0]][spot[1]] = agent.id
     if not refugee:
         agent.wealth -= cost
-    agent.has_migrated = True
-
-    world_obj.regions[dest_id]["immigrants"] += 1
-    world_obj.regions[source_id]["emigrants"] += 1
-    if refugee:
-        dest = world_obj.regions[dest_id]
-        dest["tension"] = min(1.0, dest["tension"]
-                              + setting(world_obj, "tension_per_refugee", 0.15))
-    turn = world_obj.turnNo + 1
-    record = {"turn": turn, "agent_id": agent.id, "from": source_name, "to": dest_name,
-              "cost": cost, "wealth_after": agent.wealth, "refugee": refugee}
-    agent.migration_history.append(record)
-    world_obj.migration_events.append(record)
-    print("Agent {} {} from {} to {} (cost ${:,}).".format(
-        agent.id, "fled as a refugee" if refugee else "migrated",
-        source_name, dest_name, cost))
+    agent.migration_source_region = source_id
+    agent.migration_target_region = dest_id
+    agent.migration_target_position = spot
+    agent.migration_cost = cost
+    agent.migration_is_refugee = refugee
+    print("Agent {} began travelling from {} to {} (cost ${:,}).".format(
+        agent.id, source_name, dest_name, cost))
     return True
+
+
+def _move_one_tile(agent, world_obj, destination):
+    """Update position and shared-cell occupancy for one legal adjacent step."""
+    old = (agent.pos_x, agent.pos_y)
+    old_occupants = None
+    for registry in (world_obj.workplace_occupants, world_obj.school_occupants,
+                     world_obj.grocery_occupants, world_obj.hospital_occupants,
+                     world_obj.houses):
+        if old in registry:
+            old_occupants = registry[old]
+            break
+    if old_occupants is not None:
+        old_occupants.discard(agent.id)
+    if world_obj.agent_grid[old[0]][old[1]] == agent.id:
+        world_obj.agent_grid[old[0]][old[1]] = (
+            next(iter(old_occupants), 0) if old_occupants else 0
+        )
+
+    agent.pos_x, agent.pos_y = destination
+    agent.previous_position = old
+    agent.visited_positions.add(destination)
+    agent.position_visits[destination] = agent.position_visits.get(destination, 0) + 1
+    location = destination
+    if location in world_obj.workplace_occupants:
+        occupants = world_obj.workplace_occupants[location]
+    elif location in world_obj.school_occupants:
+        occupants = world_obj.school_occupants[location]
+    elif location in world_obj.grocery_occupants:
+        occupants = world_obj.grocery_occupants[location]
+    elif location in world_obj.hospital_occupants:
+        occupants = world_obj.hospital_occupants[location]
+    elif location in world_obj.houses:
+        occupants = world_obj.houses[location]
+    else:
+        occupants = None
+    if occupants is None:
+        world_obj.agent_grid[destination[0]][destination[1]] = agent.id
+    else:
+        occupants.add(agent.id)
+        if world_obj.agent_grid[destination[0]][destination[1]] == 0:
+            world_obj.agent_grid[destination[0]][destination[1]] = agent.id
+    print("Agent {} travelled to ({}, {}).".format(
+        agent.id, destination[0], destination[1]
+    ))
+
+
+def _advance_migrations(population, world_obj):
+    """Advance each active migrant by one orthogonal tile and finish arrivals."""
+    building_types = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+    for agent in list(population.agents):
+        target = agent.migration_target_position
+        if target is None or agent.hospitalized_at is not None:
+            continue
+        current = (agent.pos_x, agent.pos_y)
+        if current != target:
+            candidates = []
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                row, col = current[0] + dx, current[1] + dy
+                if not (0 <= row < world_obj.rows and 0 <= col < world_obj.cols):
+                    continue
+                if (world_obj.agent_grid[row][col] not in (0, agent.id)
+                        and world_obj.grid[row][col] not in building_types):
+                    continue
+                distance = abs(target[0] - row) + abs(target[1] - col)
+                candidates.append((distance, (row, col)))
+            if not candidates:
+                continue
+            best_distance = min(distance for distance, _position in candidates)
+            next_position = random.choice([
+                position for distance, position in candidates
+                if distance == best_distance
+            ])
+            _move_one_tile(agent, world_obj, next_position)
+        if (agent.pos_x, agent.pos_y) != target:
+            continue
+
+        source_id = agent.migration_source_region
+        dest_id = agent.migration_target_region
+        refugee = agent.migration_is_refugee
+        cost = agent.migration_cost
+        agent.region = dest_id
+        agent.has_migrated = True
+        agent.migration_target_region = None
+        agent.migration_target_position = None
+        agent.migration_source_region = None
+        world_obj.regions[dest_id]["immigrants"] += 1
+        world_obj.regions[source_id]["emigrants"] += 1
+        if refugee:
+            dest = world_obj.regions[dest_id]
+            dest["tension"] = min(1.0, dest["tension"]
+                                  + setting(world_obj, "tension_per_refugee", 0.15))
+        record = {
+            "turn": world_obj.turnNo + 1,
+            "agent_id": agent.id,
+            "from": world_obj.regions[source_id]["name"],
+            "to": world_obj.regions[dest_id]["name"],
+            "cost": cost,
+            "wealth_after": agent.wealth,
+            "refugee": refugee,
+        }
+        agent.migration_history.append(record)
+        world_obj.migration_events.append(record)
+        print("Agent {} {} from {} to {} (cost ${:,}).".format(
+            agent.id, "fled as a refugee" if refugee else "migrated",
+            record["from"], record["to"], cost
+        ))
 
 
 def process_migration(population, world_obj):
@@ -108,6 +203,7 @@ def process_migration(population, world_obj):
     world_obj.update_housing_prices(population.agents)
     world_obj.update_region_stats(population.agents, reprice=False)
     world_obj.distribute_welfare(population.agents)
+    _advance_migrations(population, world_obj)
 
     min_age = setting(world_obj, "min_age", 18)
     base_chance = setting(world_obj, "base_chance", 0.03)
@@ -136,7 +232,9 @@ def process_migration(population, world_obj):
 
     by_id = {agent.id: agent for agent in population.agents}
     for agent in list(population.agents):
-        if agent.age < min_age or agent.diseases or agent.hospitalized_at is not None:
+        if (agent.age < min_age or agent.diseases
+                or agent.hospitalized_at is not None
+                or agent.migration_target_region is not None):
             continue
 
         home = world_obj.regions[agent.region]
