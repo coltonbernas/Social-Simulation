@@ -952,6 +952,8 @@ class Agent:
 
     def apply_for_job(self, world_obj, building_type, building_location):
         """Apply once per opening using intelligence, willpower and health."""
+        if self.age < 15:
+            return False
         if not self.can_apply_for_type(building_type, world_obj):
             return False
         if not self.in_my_region(world_obj, building_location):

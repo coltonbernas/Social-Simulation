@@ -513,7 +513,8 @@ class World:
                 agent.wealth += pay
 
     def can_accept_resident(self, location):
-        capacity = 5 if self.grid[location[0]][location[1]] == 11 else None
+        building_type = self.grid[location[0]][location[1]]
+        capacity = 5 if building_type == 11 else 6 if building_type == 12 else None
         return capacity is None or len(self.houses[location]) < capacity
 
     def food_cost(self, region_id, agent=None):

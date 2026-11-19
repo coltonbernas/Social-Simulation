@@ -39,6 +39,7 @@ class Population:
         self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
         self.all_agents = list(self.agents)
         self.next_agent_id = count
+        self.pregnancies = {}
 
     def birth(self, world_obj):
         """Create and add a newborn agent whose age is exactly 0."""
@@ -351,8 +352,7 @@ class Population:
             threshold = child._get_cfg_val(world_obj, "Grocery & Needs",
                                            "grocery_hunger_threshold", grocery_hunger_threshold)
             if (not child.parent_ids or child.birth_turn is None
-                    or turn - child.birth_turn > 10
-                    or child.hunger >= threshold):
+                    or child.age >= 15 or child.hunger >= threshold):
                 continue
             shortfall = max(0, world_obj.food_cost(child.region) - child.wealth)
             parents = [parent for parent in self.agents if parent.id in child.parent_ids]
@@ -372,9 +372,22 @@ class Population:
                     break
 
     def _process_births(self, world_obj):
-        """Give an eligible dating pair one child after more than five turns."""
+        """Conceive after the existing relationship wait and deliver after nine months."""
         turn = world_obj.turnNo + 1
         agents_by_id = {agent.id: agent for agent in self.agents}
+        gestation_days = 9 * (365.25 / 12)
+        elapsed_days = getattr(world_obj, "elapsed_days", 0.0)
+        days_at_turn_end = elapsed_days + getattr(world_obj, "time_step_days", 365.25)
+        for mother_id, pregnancy in list(self.pregnancies.items()):
+            mother = agents_by_id.get(mother_id)
+            father = agents_by_id.get(pregnancy["father_id"])
+            if mother is None or father is None:
+                del self.pregnancies[mother_id]
+                continue
+            if days_at_turn_end - pregnancy["start_day"] >= gestation_days:
+                self.birth_child(world_obj, mother, father)
+                del self.pregnancies[mother_id]
+
         for first in list(self.agents):
             partner_id = first.dating_partner_id
             if (partner_id is None
@@ -386,7 +399,14 @@ class Population:
                     or self._are_siblings(first, second)
                     or first.children_ids.intersection(second.children_ids)):
                 continue
-            self.birth_child(world_obj, first, second)
+            mother, father = (first, second) if first.gender == "female" else (second, first)
+            if (mother.gender != "female" or mother.age < 18
+                    or mother.id in self.pregnancies):
+                continue
+            self.pregnancies[mother.id] = {
+                "father_id": father.id,
+                "start_day": elapsed_days,
+            }
 
     def _process_marriages(self, world_obj):
         """Marry dating couples after five turns if they can cover the wedding."""
