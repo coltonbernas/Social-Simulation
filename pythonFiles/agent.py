@@ -172,7 +172,7 @@ class Agent:
         self.hunger = self.hunger_max
         self.active_stressful_events = set()
         self.political_status = None # to do
-        self.birth_place = None #to do
+        self.birth_place = None
         self.birth_date = None
         self.ethnicity = ethnicity or random.choice(ETHNICITY_TYPES)
         self.ethnicity_percentages = (
@@ -215,6 +215,7 @@ class Agent:
         self.pos_x, self.pos_y = self.get_safe_spawn_pos(world_obj, rows, cols, region_id)
         # birth_region never changes; region is where the agent lives now.
         self.birth_region = world_obj.region_of(self.pos_x, self.pos_y)
+        self.birth_place = world_obj.regions[self.birth_region]["name"]
         self.region = self.birth_region
 
         self.known_empty = set()

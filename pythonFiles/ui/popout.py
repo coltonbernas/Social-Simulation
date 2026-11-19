@@ -892,7 +892,7 @@ class SimulationWindow:
             ("Home", "({}, {})".format(*agent.house) if agent.house else "homeless"),
             ("Position", "({}, {})".format(agent.pos_x, agent.pos_y)),
             ("Region", self.world.regions[agent.region]["name"]),
-            ("Born in", self.world.regions[agent.birth_region]["name"]),
+            ("Birth place", agent.birth_place),
             ("Has migrated", "yes" if agent.has_migrated else "no"),
             ("Diseases", ", ".join(
                 disease_name(disease) for disease in sorted(agent.diseases)

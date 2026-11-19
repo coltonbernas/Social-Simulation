@@ -671,13 +671,15 @@ class Population:
         for agent in self.all_agents:
             death = deaths_by_agent.get(agent.id)
             if death:
-                print("  Agent {}: DIED at age {} (cause: {}); end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
-                    agent.id, death["age"], death["cause"], agent.intelligence,
+                print("  Agent {}: DIED at age {} (cause: {}); birthplace: {}; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
+                    agent.id, death["age"], death["cause"], agent.birth_place,
+                    agent.intelligence,
                     agent.personality_type, agent.gender, agent.ethnicity, agent.religion
                 ))
             else:
-                print("  Agent {}: alive; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
-                    agent.id, agent.intelligence, agent.personality_type, agent.gender,
+                print("  Agent {}: alive; birthplace: {}; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
+                    agent.id, agent.birth_place, agent.intelligence,
+                    agent.personality_type, agent.gender,
                     agent.ethnicity, agent.religion
                 ))
 
@@ -880,12 +882,8 @@ class Population:
         print("\nCommunications:")
         if world_obj.communication_events:
             for event in world_obj.communication_events:
-                locations = ", ".join(
-                    "({}, {})".format(x, y)
-                    for x, y in event["empty_locations"]
-                ) or "none known"
-                print("  Turn {}: {} interacted with {}; shared building-free locations: {}".format(
-                    event["turn"], event["sender_name"], event["receiver_name"], locations
+                print("  Turn {}: {} shared map information with {}.".format(
+                    event["turn"], event["sender_name"], event["receiver_name"]
                 ))
         else:
             print("  No messages were exchanged.")
@@ -1162,12 +1160,8 @@ class Population:
         print("Communications:")
         if communications:
             for event in communications:
-                locations = ", ".join(
-                    "({}, {})".format(x, y)
-                    for x, y in event["empty_locations"]
-                ) or "none known"
-                print("  Turn {}: {} interacted with {}; shared building-free locations: {}".format(
-                    event["turn"], event["sender_name"], event["receiver_name"], locations
+                print("  Turn {}: {} shared map information with {}.".format(
+                    event["turn"], event["sender_name"], event["receiver_name"]
                 ))
         else:
             print("  None")
