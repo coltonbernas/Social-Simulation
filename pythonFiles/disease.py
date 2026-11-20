@@ -50,8 +50,8 @@ def validate_immune_system(immune_system):
 def find_best_match(immune_system, pattern):
     """Return the earliest substring with the fewest differing bits."""
     validate_immune_system(immune_system)
-    if not isinstance(pattern, str) or not 1 <= len(pattern) <= 10:
-        raise ValueError("Disease patterns must contain between 1 and 10 bits")
+    if not isinstance(pattern, str) or not 2 <= len(pattern) <= 14:
+        raise ValueError("Disease patterns must contain between 2 and 14 bits")
     if any(bit not in "01" for bit in pattern):
         raise ValueError("Disease patterns must contain only binary digits")
     if len(pattern) > len(immune_system):

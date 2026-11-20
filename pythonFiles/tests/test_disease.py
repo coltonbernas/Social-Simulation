@@ -18,7 +18,7 @@ from pythonFiles.disease import (
 
 class DiseaseModelTests(unittest.TestCase):
     def test_patterns_fit_immune_system_and_matching_slides(self):
-        self.assertTrue(all(1 <= len(disease.pattern) <= 10
+        self.assertTrue(all(2 <= len(disease.pattern) <= 14
                             for disease in DISEASES.values()))
         self.assertTrue(all(len(disease.pattern) <= IMMUNE_SYSTEM_LENGTH
                             for disease in DISEASES.values()))
@@ -27,6 +27,14 @@ class DiseaseModelTests(unittest.TestCase):
         immune_system = "0" * 7 + disease.pattern + "0" * 38
         self.assertTrue(is_immune(immune_system, "common_cold"))
         self.assertEqual(find_best_match("0" * 50, "10101"), (0, (0, 2, 4)))
+
+    def test_matching_accepts_patterns_from_two_to_fourteen_bits(self):
+        self.assertEqual(find_best_match("0" * 50, "01")[0], 0)
+        self.assertEqual(find_best_match("0" * 50, "0" * 14)[0], 0)
+        for pattern in ("0", "0" * 15):
+            with self.subTest(length=len(pattern)):
+                with self.assertRaises(ValueError):
+                    find_best_match("0" * 50, pattern)
 
     def test_random_and_recombined_immune_systems_are_50_bits(self):
         self.assertEqual(len(random_immune_system()), IMMUNE_SYSTEM_LENGTH)
