@@ -129,6 +129,15 @@ class SimulationWindow:
         style.map("Accent.TButton", background=[("active", "#7dd3fc")])
         style.configure("TEntry", fieldbackground=CARD, foreground=TEXT,
                         insertcolor=TEXT, borderwidth=0)
+        style.configure(
+            "Disease.TCombobox", fieldbackground=PANEL, background=CARD,
+            foreground=TEXT, arrowcolor=TEXT, padding=6,
+        )
+        style.map(
+            "Disease.TCombobox",
+            fieldbackground=[("readonly", PANEL), ("disabled", PANEL)],
+            foreground=[("readonly", TEXT), ("disabled", MUTED)],
+        )
         style.configure("TNotebook", background=BG, borderwidth=0)
         style.configure("TNotebook.Tab", background=PANEL, foreground=MUTED,
                         padding=(14, 7), borderwidth=0)
@@ -471,6 +480,11 @@ class SimulationWindow:
         dialog.transient(self.root)
         dialog.configure(bg=BG)
         dialog.resizable(False, False)
+        dialog.option_add("*TCombobox*Listbox.background", PANEL)
+        dialog.option_add("*TCombobox*Listbox.foreground", TEXT)
+        dialog.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+        dialog.option_add("*TCombobox*Listbox.selectForeground", BG)
+        dialog.option_add("*TCombobox*Listbox.font", (FONT, 10))
 
         frame = ttk.Frame(dialog, padding=16)
         frame.pack(fill="both", expand=True)
@@ -482,6 +496,7 @@ class SimulationWindow:
         disease_box = ttk.Combobox(
             frame, textvariable=disease_var,
             values=tuple(disease_ids_by_name), state="readonly", width=28,
+            height=len(disease_ids_by_name), style="Disease.TCombobox",
         )
         disease_box.grid(row=1, column=1, sticky="ew", pady=4)
 
@@ -489,6 +504,7 @@ class SimulationWindow:
         agent_var = tk.StringVar()
         agent_box = ttk.Combobox(
             frame, textvariable=agent_var, state="readonly", width=28,
+            height=10, style="Disease.TCombobox",
         )
         agent_box.grid(row=2, column=1, sticky="ew", pady=4)
         hint = ttk.Label(frame, text="", style="Muted.TLabel")
