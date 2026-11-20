@@ -10,6 +10,14 @@ try:
 except ImportError:
     from ui.llm import ModelError, active_model, complete, using_openai
 
+try:
+    from ..disease import DISEASES, disease_name
+except ImportError:
+    try:
+        from disease import DISEASES, disease_name
+    except ImportError:
+        from pythonFiles.disease import DISEASES, disease_name
+
 CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
 
 # kind: how a value is validated.
@@ -26,6 +34,20 @@ PARAMS = (
     ("Building Counts", "type_2_workplace",
      ("type 2 workplaces", "type 2 workplace", "workplace 2", "w2 buildings"),
      "count", "restart", 1, "How many higher-wage workplaces are placed."),
+    ("Building Counts", "type_3_workplace",
+     ("type 3 workplaces", "type 3 workplace", "workplace 3"),
+     "count", "restart", 1, "How many type 3 workplaces are placed."),
+    ("Building Counts", "type_4_workplace",
+     ("type 4 workplaces", "type 4 workplace", "workplace 4"),
+     "count", "restart", 1, "How many type 4 workplaces are placed."),
+    ("Building Counts", "type_5_workplace",
+     ("type 5 workplaces", "type 5 workplace", "workplace 5"),
+     "count", "restart", 1, "How many type 5 workplaces are placed."),
+    ("Building Counts", "apartment_building",
+     ("apartments", "apartment buildings", "apartment building", "apartment"),
+     "count", "restart", 1, "How many apartment buildings are placed."),
+    ("Building Counts", "hotel", ("hotels", "hotel count", "hotel"),
+     "count", "restart", 1, "How many hotels are placed."),
     ("Building Counts", "school", ("schools", "school count", "school"),
      "count", "restart", 1, "How many schools are placed."),
     ("Building Counts", "grocery_store",
@@ -52,36 +74,74 @@ PARAMS = (
      "int", "live", 5, "Health cannot fall below this."),
     ("Agent & Population", "health_max", ("health max", "maximum health"),
      "int", "live", 5, "Health cannot rise above this."),
-    ("Health & Disease", "base_disease_transmission",
-     ("disease transmission", "transmission", "contagion", "infection rate", "base transmission"),
-     "prob", "live", 0.01, "Chance an agent catches a disease from a sick neighbor."),
-    ("Health & Disease", "disease_health_impact",
-     ("disease impact", "disease damage", "sickness damage", "disease health impact"),
-     "int", "live", 1, "Health lost when an agent catches or keeps a disease."),
-    ("Health & Disease", "disease_chance_per_turn",
-     ("disease chance", "natural disease", "disease chance per turn", "spontaneous disease"),
-     "prob", "live", 0.001, "Chance a healthy agent gets sick on their own each turn."),
-    ("Health & Disease", "hospital_stay_duration_turns",
-     ("hospital stay", "hospital duration", "time in hospital"),
-     "count", "live", 1, "Turns an admitted agent spends in the hospital before they are cured."),
-    ("Economy & Jobs", "type_1_income_per_turn",
-     ("type 1 income", "type 1 wage", "low wage", "workplace 1 pay"),
-     "money", "live", 25, "Base pay each turn for a type 1 job, before the region wage multiplier."),
-    ("Economy & Jobs", "type_2_income_per_turn",
-     ("type 2 income", "type 2 wage", "high wage", "workplace 2 pay"),
-     "money", "live", 50, "Base pay each turn for a type 2 job, before the region wage multiplier."),
+    ("Health & Disease", "community_case_chance_per_turn",
+     ("community case chance", "disease chance", "natural disease",
+      "disease chance per turn", "spontaneous disease"),
+     "prob", "live", 0.001,
+     "Chance a healthy agent is exposed to a disease they are not already immune to."),
+    ("Economy & Jobs", "type_1_income_per_year",
+     ("type 1 income", "type 1 wage", "type 1 salary", "low wage", "workplace 1 pay"),
+     "money", "live", 1000, "Annual pay for a type 1 job, before the time step, regional wage, and tax."),
+    ("Economy & Jobs", "type_2_income_per_year",
+     ("type 2 income", "type 2 wage", "type 2 salary", "high wage", "workplace 2 pay"),
+     "money", "live", 1000, "Annual pay for a type 2 job, before the time step, regional wage, and tax."),
+    ("Economy & Jobs", "grocery_store_income_per_year",
+     ("grocery income", "grocery wage", "grocery salary", "grocery store pay"),
+     "money", "live", 1000, "Annual pay for a grocery store job, before the time step, regional wage, and tax."),
+    ("Economy & Jobs", "hospital_income_per_year",
+     ("hospital income", "hospital wage", "hospital salary", "hospital pay"),
+     "money", "live", 1000, "Annual pay for a hospital job, before the time step, regional wage, and tax."),
+    ("Economy & Jobs", "type_3_income_per_year",
+     ("type 3 income", "type 3 wage", "type 3 salary"),
+     "money", "live", 1000, "Annual pay for a type 3 job, before the time step, regional wage, and tax."),
+    ("Economy & Jobs", "type_4_income_per_year",
+     ("type 4 income", "type 4 wage", "type 4 salary"),
+     "money", "live", 1000, "Annual pay for a type 4 job, before the time step, regional wage, and tax."),
+    ("Economy & Jobs", "type_5_income_per_year",
+     ("type 5 income", "type 5 wage", "type 5 salary"),
+     "money", "live", 1000, "Annual pay for a type 5 job, before the time step, regional wage, and tax."),
+    ("Economy & Jobs", "type_1_application_threshold",
+     ("type 1 threshold", "type 1 application threshold"),
+     "float", "live", 1, "Score from intelligence, willpower, and health needed for a type 1 job."),
+    ("Economy & Jobs", "type_2_application_threshold",
+     ("type 2 threshold", "type 2 application threshold"),
+     "float", "live", 1, "Score from intelligence, willpower, and health needed for a type 2 job."),
+    ("Economy & Jobs", "grocery_store_application_threshold",
+     ("grocery application threshold", "grocery hiring threshold"),
+     "float", "live", 1, "Score needed for a grocery store job."),
+    ("Economy & Jobs", "hospital_application_threshold",
+     ("hospital threshold", "hospital application threshold"),
+     "float", "live", 1, "Score needed for a hospital job."),
+    ("Economy & Jobs", "type_3_application_threshold",
+     ("type 3 threshold", "type 3 application threshold"),
+     "float", "live", 1, "Score needed for a type 3 job."),
+    ("Economy & Jobs", "type_4_application_threshold",
+     ("type 4 threshold", "type 4 application threshold"),
+     "float", "live", 1, "Score needed for a type 4 job."),
+    ("Economy & Jobs", "type_5_application_threshold",
+     ("type 5 threshold", "type 5 application threshold"),
+     "float", "live", 1, "Score needed for a type 5 job."),
+    ("Economy & Jobs", "apartment_rent_per_day",
+     ("apartment rent", "apartment cost"),
+     "money", "live", 10, "Daily apartment rent. Agents are billed every four days, then regional prices apply."),
+    ("Economy & Jobs", "hotel_rent_per_day",
+     ("hotel rent", "hotel cost"),
+     "money", "live", 10, "Daily hotel rent. Agents are billed every four days, then regional prices apply."),
     ("Economy & Jobs", "budget_house_cost",
      ("budget house cost", "cheap rent", "budget rent"),
-     "money", "live", 50, "Base price of a budget house, before regional cost of living."),
+     "money", "live", 50, "Rent for four days in a budget house, before cost of living, housing prices, and home quality."),
     ("Economy & Jobs", "premium_house_cost",
      ("premium house cost", "expensive rent", "premium rent"),
-     "money", "live", 50, "Base price of a premium house, before regional cost of living."),
+     "money", "live", 50, "Rent for four days in a premium house, before cost of living, housing prices, and home quality."),
     ("Economy & Jobs", "low_wealth_threshold",
      ("low wealth threshold", "poverty line", "poor threshold"),
      "money", "live", 100, "Wealth below this starts counting as financial stress."),
     ("Economy & Jobs", "low_wealth_stress_turns",
      ("low wealth stress turns", "poverty stress turns", "turns until stress"),
      "count", "live", 1, "Turns below the poverty line before stress begins."),
+    ("Economy & Jobs", "welfare_per_unemployed",
+     ("welfare", "unemployment benefit", "welfare payment"),
+     "money", "live", 5, "Most a region pays one unemployed adult each turn, limited by the tax in its treasury."),
     ("Grocery & Needs", "hunger_drain_per_step",
      ("hunger drain", "hunger loss", "food drain"),
      "int", "live", 1, "Hunger points lost each turn."),
@@ -119,6 +179,96 @@ PARAMS = (
     ("Migration", "housing_price_sensitivity",
      ("housing sensitivity", "rent sensitivity", "housing price sensitivity"),
      "float", "live", 0.1, "How strongly crowded housing pushes regional rents."),
+    ("Migration", "min_age",
+     ("migration age", "minimum migration age", "min age"),
+     "count", "live", 1, "Youngest age at which an agent can migrate or receive welfare."),
+    ("Migration", "gap_threshold",
+     ("wealth gap", "gap threshold", "migration gap"),
+     "float", "live", 0.05, "How much better another region must look before an agent will move."),
+    ("Migration", "gap_bonus",
+     ("gap bonus", "wealth gap bonus"),
+     "float", "live", 0.1, "Extra move chance for each step the destination looks better than home."),
+    ("Migration", "savings_cushion",
+     ("savings cushion", "moving savings"),
+     "multiplier", "live", 0.5, "An ordinary move requires this multiple of the entry cost in savings."),
+    ("Migration", "gatekeeping",
+     ("gatekeeping", "entry barrier"),
+     "float", "live", 0.1, "How much a region's share of rich residents raises the cost of moving in."),
+    ("Migration", "rich_wealth_threshold",
+     ("rich threshold", "rich wealth"),
+     "money", "live", 500, "Wealth at which an agent counts as rich and may leave a crowded or tense region."),
+    ("Migration", "crowding_push",
+     ("crowding push", "crowding"),
+     "float", "live", 0.05, "How strongly high housing prices push rich residents to leave."),
+    ("Migration", "tension_push",
+     ("tension push",),
+     "float", "live", 0.05, "How strongly social tension pushes rich residents to leave."),
+    ("Migration", "refugee_wealth_limit",
+     ("refugee wealth limit", "refugee wealth"),
+     "money", "live", 50, "Unemployed agents below this wealth can flee as refugees."),
+    ("Migration", "refugee_cost",
+     ("refugee cost", "refugee price"),
+     "money", "live", 25, "What a refugee pays to leave, instead of the normal entry cost."),
+    ("Migration", "refugee_chance",
+     ("refugee chance", "flee chance"),
+     "prob", "live", 0.01, "Chance a poor unemployed agent flees when another region looks better."),
+    ("Migration", "refugee_death_risk",
+     ("refugee death risk", "journey death risk"),
+     "prob", "live", 0.01, "Chance a refugee dies on the journey."),
+    ("Migration", "refugee_health_loss",
+     ("refugee health loss", "journey health loss"),
+     "count", "live", 1, "Health a surviving refugee loses on the journey."),
+    ("Migration", "tension_per_refugee",
+     ("tension per refugee", "refugee tension"),
+     "float", "live", 0.05, "Tension added in a region when a refugee arrives."),
+    ("Migration", "tension_decay",
+     ("tension decay",),
+     "prob", "live", 0.05, "Fraction of a region's tension that remains after each turn."),
+    ("Migration", "tension_mental_drain",
+     ("tension stress", "tension mental drain"),
+     "count", "live", 1, "Mental health lost each turn in a region at full tension, before resilience."),
+)
+
+
+def _disease_label(disease_id):
+    try:
+        return disease_name(disease_id)
+    except (KeyError, TypeError):
+        return str(disease_id)
+
+
+def _disease_source(event):
+    source = event.get("source")
+    if source == "natural":
+        return "naturally"
+    if source == "user":
+        return "by the user"
+    if event.get("source_id") is not None:
+        return "from Agent {}".format(event["source_id"])
+    return "from contact"
+
+
+MECHANICS = (
+    "Diseases are measles, common cold, influenza, COVID-19, and pneumonic plague. "
+    "Each agent has a 50-bit immune system, and children inherit a mix of their parents' systems. "
+    "Contact can expose a neighbor who is not immune; the illness starts on the next turn. "
+    "Community case chance can expose a healthy agent at random. "
+    "Each turn repairs one mismatched immune bit, or two while the agent is in hospital. "
+    "The agent leaves hospital when no infection or pending exposure remains. "
+    "Active diseases also drain extra hunger equal to their pattern length. "
+    "The disease controls can expose one living agent who is not immune. "
+    "Jobs are type 1 through 5, grocery stores, and hospitals. Pay is an annual salary "
+    "scaled by the length of the turn and the region wage, then reduced by that region's income tax. "
+    "Hiring uses intelligence, willpower, and health against the job's application threshold. "
+    "Homes are budget houses, premium houses, apartments, and hotels. Rent is billed every four days "
+    "and rises with cost of living, local housing prices, and home quality. "
+    "A home can hold the owner, their partner, and their children, up to six people. "
+    "Tax goes into the regional treasury, which pays welfare to unemployed adults until the treasury is empty. "
+    "Adults compare regions using wage after tax, prices, open jobs, and tension. "
+    "A normal move costs more where prices are high and many residents are rich, and it requires savings plus an open job. "
+    "A poor unemployed agent can instead flee as a refugee for a lower cost, risking health or death. "
+    "Refugee arrivals raise tension, which drains mental health and then fades. "
+    "Couples can conceive after they have been together, and a child is born about nine months later."
 )
 
 
@@ -126,6 +276,20 @@ def _norm(text):
     text = text.lower().replace("_", " ").replace("&", " and ")
     text = re.sub(r"[^a-z0-9.%\s+-]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+_SETTING_FILLER = {
+    "a", "an", "the", "of", "to", "for", "value", "setting",
+    "please", "now", "currently", "number", "count", "many",
+}
+
+
+def _alias_covers(query, alias):
+    """True when the alias accounts for the request, ignoring filler words."""
+    if alias not in query:
+        return False
+    rest = query.replace(alias, " ", 1)
+    return not [word for word in rest.split() if word not in _SETTING_FILLER]
 
 
 def _fmt(value):
@@ -296,13 +460,13 @@ class SimulationGuide:
             return "The simulation hasn't started yet. Once it does, ask me what you're seeing or which setting to change."
         if re.search(r"\bagents?\s+\d+\b", norm) or re.search(r"\b(this agent|selected agent|selection)\b", norm):
             return self._agent_observation(norm)
-        if re.search(r"\b(regions?|migrat\w*|housing price|northwest|northeast|southwest|southeast)\b", norm):
+        if re.search(r"\b(regions?|migrat\w*|housing price|northwest|northeast|southwest|southeast|refugee\w*|tension)\b", norm):
             return self._region_observation()
-        if re.search(r"\b(wealth|money|job|employ|wage|inequal|gini|econom|rent)\b", norm):
+        if re.search(r"\b(wealth|money|job|employ|wage|inequal|gini|econom|rent|tax|welfare)\b", norm):
             return self._economy_observation()
-        if re.search(r"\b(health|sick|disease|hunger|hospital|stress|mental)\b", norm):
+        if re.search(r"\b(health|sick|disease|hunger|hospital|stress|mental|immune|infection)\b", norm):
             return self._health_observation()
-        if re.search(r"\b(event|just happen|recent|log|died|born)\b", norm):
+        if re.search(r"\b(event|just happen\w*|recent|log|died|born)\b", norm):
             return self._events_observation()
         if re.search(r"\b(map|chart|looking at|see|screen)\b", norm):
             return self._view_observation()
@@ -310,17 +474,18 @@ class SimulationGuide:
             return self._overview()
         return (
             "I can explain this run or change a config value. "
-            "Try “what's happening”, “explain health”, or “set disease chance to 0.01”. "
+            "Try “what's happening”, “explain disease”, or “set community case chance to 0.01”. "
             "Say “help” for more."
         )
 
     def _help(self):
         return (
             "Ask me about the run, or tell me to change a setting.\n\n"
-            "Observations: “what's happening”, “why is health changing”, "
-            "“how is wealth”, “compare regions”, “what just happened”, “explain agent 3”.\n"
-            "Changes: “set food cost to 150”, “increase disease chance by 0.01”, "
-            "“decrease type 1 income by 20%”. Live settings apply on the next turn. "
+            "Observations: “what's happening”, “explain disease”, "
+            "“how is wealth”, “compare regions”, “why are people migrating”, “explain agent 3”.\n"
+            "Changes: “set food cost to 150”, “set community case chance to 0.01”, "
+            "“set type 1 income to 40000”, “set welfare to 40”, “set northwest tax to 0.2”. "
+            "Live settings apply on the next turn. "
             "Map size, building counts, and starting population apply when you say “restart”.\n"
             "Files: “save as outbreak”, “save”, “load small”. "
             "I write JSON into the configs folder and leave default.json alone unless you name it.\n"
@@ -363,7 +528,10 @@ class SimulationGuide:
         if name:
             self.user_name = re.split(r"\s+and\s+", name.group(1).strip(), maxsplit=1, flags=re.I)[0].strip()
         if re.search(r"\b(care about|focus on|watch|interested in)\b", text, re.I):
-            for topic in ("health", "disease", "wealth", "jobs", "migration", "regions", "housing"):
+            for topic in (
+                "health", "disease", "immune", "immunity", "wealth", "jobs", "welfare", "tax",
+                "migration", "refugee", "refugees", "tension", "regions", "housing",
+            ):
                 if re.search(r"\b{}\b".format(topic), text, re.I):
                     self.focus = topic
                     break
@@ -380,13 +548,18 @@ class SimulationGuide:
             state += "\n\n" + self._turn_context(text)
         who = self.user_name or "They have not given a name."
         focus = self.focus or "whatever is changing in the run"
-        labels = ", ".join(spec["label"] for spec in self._specs()[:16])
+        labels = ", ".join((
+            "community case chance", "type 1 income", "welfare", "apartment rent",
+            "northwest tax rate", "northwest home quality", "move cost",
+            "refugee chance", "tension decay", "food cost",
+        ))
         system = (
             "You are the guide sitting with one person while they run a social simulation. "
-            "Talk to them directly, by name when you know it. Use only the records below. "
+            "Talk to them directly, by name when you know it. Use the records and the rules below. "
             "Do not invent events, statistics, agents, or files. "
             "When they ask about a turn, explain that turn from its record: what changed and why it matters. "
             "Keep the reply under 140 words.\n"
+            "Rules: {mechanics}\n"
             "When they clearly ask to change a setting, end with one line per change, exactly like:\n"
             "ACTION: set food cost to 100\n"
             "Ordinary setting names include: {labels}.\n"
@@ -394,7 +567,7 @@ class SimulationGuide:
             "Person: {who}\n"
             "They want you to watch: {focus}.\n\n"
             "Records:\n{state}"
-        ).format(labels=labels, who=who, focus=focus, state=state)
+        ).format(labels=labels, mechanics=MECHANICS, who=who, focus=focus, state=state)
         messages = [{"role": "system", "content": system}]
         for past_user, past_reply in self._history[-6:]:
             messages.append({"role": "user", "content": past_user})
@@ -453,6 +626,31 @@ class SimulationGuide:
                 "blurb": "Cost-of-living multiplier for the {} region.".format(name),
                 "label": "{} cost of living".format(name),
             })
+            specs.append({
+                "path": ("Regions", name, "tax_rate"),
+                "aliases": (
+                    "{} tax".format(nice),
+                    "{} tax rate".format(nice),
+                    "{} income tax".format(nice),
+                ),
+                "kind": "prob",
+                "when": "live",
+                "step": 0.05,
+                "blurb": "Share of wages {} collects as income tax.".format(name),
+                "label": "{} tax rate".format(name),
+            })
+            specs.append({
+                "path": ("Regions", name, "home_quality"),
+                "aliases": (
+                    "{} home quality".format(nice),
+                    "{} housing quality".format(nice),
+                ),
+                "kind": "multiplier",
+                "when": "live",
+                "step": 0.1,
+                "blurb": "Extra housing-cost multiplier for homes in {}.".format(name),
+                "label": "{} home quality".format(name),
+            })
         return specs
 
     def _match_param(self, text):
@@ -469,7 +667,7 @@ class SimulationGuide:
                 alias_n = _norm(alias)
                 if query == alias_n:
                     best = 1000 + len(alias_n)
-                elif alias_n in query:
+                elif _alias_covers(query, alias_n):
                     best = max(best, 500 + len(alias_n))
                 elif query in alias_n and len(query) > 3:
                     best = max(best, 200 + len(query))
@@ -529,6 +727,10 @@ class SimulationGuide:
                 region["wage_multiplier"] = vals["wage_multiplier"]
             if "cost_of_living_multiplier" in vals:
                 region["cost_multiplier"] = vals["cost_of_living_multiplier"]
+            if "tax_rate" in vals:
+                region["tax_rate"] = vals["tax_rate"]
+            if "home_quality" in vals:
+                region["home_quality"] = vals["home_quality"]
 
     def _coerce(self, spec, raw_value, current):
         kind = spec["kind"]
@@ -536,15 +738,17 @@ class SimulationGuide:
             number = float(raw_value)
         except (TypeError, ValueError):
             return None, "I need a number for {}.".format(spec["label"])
-        if kind in ("count", "int", "money") and not number.is_integer():
+        if kind in ("count", "int") and not number.is_integer():
             return None, "{} has to be a whole number.".format(spec["label"].capitalize())
-        if kind in ("count", "int", "money"):
+        if kind in ("count", "int"):
             number = int(number)
         if kind == "prob" and not 0 <= number <= 1:
             return None, "{} is a probability, so it needs to stay between 0 and 1.".format(
                 spec["label"].capitalize())
         if kind == "multiplier" and number <= 0:
             return None, "{} has to be greater than 0.".format(spec["label"].capitalize())
+        if kind == "float" and number < 0:
+            return None, "{} can't be negative.".format(spec["label"].capitalize())
         if kind == "count" and number < 0:
             return None, "{} can't be negative.".format(spec["label"].capitalize())
         if kind == "money" and number < 0:
@@ -587,7 +791,7 @@ class SimulationGuide:
                 percent=bool(relative.group("pct")),
             )
         if re.search(r"\b(set|change|update|increase|decrease|raise|lower)\b", norm):
-            return "Name the setting and the number. For example: “set food cost to 150” or “increase disease chance by 0.01”."
+            return "Name the setting and the number. For example: “set food cost to 150” or “set community case chance to 0.01”."
         return None
 
     def _apply_absolute(self, name, raw_value):
@@ -595,6 +799,9 @@ class SimulationGuide:
         if tied:
             return self._ambiguous(tied)
         if spec is None:
+            retired = self._retired_setting(name)
+            if retired:
+                return retired
             return "I don't have a setting called “{}”. Say “show settings” to see the names I can change.".format(name.strip())
         current = self._get(spec["path"])
         value, error = self._coerce(spec, raw_value, current)
@@ -607,6 +814,9 @@ class SimulationGuide:
         if tied:
             return self._ambiguous(tied)
         if spec is None:
+            retired = self._retired_setting(name)
+            if retired:
+                return retired
             return "I don't have a setting called “{}”.".format(name.strip())
         current = self._get(spec["path"])
         if not isinstance(current, (int, float)):
@@ -626,7 +836,7 @@ class SimulationGuide:
             if direction in ("decrease", "lower", "reduce"):
                 delta = -delta
             updated = current + delta
-        if spec["kind"] in ("count", "int", "money"):
+        if spec["kind"] in ("count", "int"):
             updated = int(round(updated))
         value, error = self._coerce(spec, updated, current)
         if error:
@@ -648,6 +858,24 @@ class SimulationGuide:
         return "{} is now {} (was {}). {}. {}".format(
             spec["label"].capitalize(), _fmt(value), _fmt(old), timing, saved)
 
+    def _retired_setting(self, name):
+        """Explain a setting the current simulation no longer uses."""
+        if re.search(r"\b(hospital stay|hospital duration|time in hospital)\b", name):
+            return (
+                "A hospital stay isn't a fixed number of turns. "
+                "The agent stays until immune repair clears every infection, "
+                "and the hospital repairs two immune bits a turn instead of one."
+            )
+        if re.search(r"\b(disease transmission|transmission rate|disease impact|disease damage|disease health impact)\b", name):
+            return (
+                "Transmission and disease damage aren't separate settings anymore. "
+                "Each disease has its own contagiousness. "
+                "The setting you can change is community case chance."
+            )
+        if re.search(r"\bincome per turn\b|\bper turn income\b", name):
+            return "Pay is an annual salary now. Try “set type 1 income to 40000”."
+        return None
+
     def _ambiguous(self, specs):
         names = ", ".join(spec["label"] for spec in specs[:6])
         return "That matches more than one setting: {}. Say the full name.".format(names)
@@ -659,7 +887,7 @@ class SimulationGuide:
         if tied:
             return self._ambiguous(tied)
         if spec is None:
-            return None
+            return self._retired_setting(norm)
         value = self._get(spec["path"])
         when = {
             "live": "Changing it affects the running simulation.",
@@ -848,6 +1076,10 @@ class SimulationGuide:
                 stats["employed"], stats["n"], world.open_jobs, len(world.building_jobs)),
             "Average wealth is ${:,.0f}.".format(stats["wealth"]),
         ]
+        step = getattr(world, "time_step_days", None)
+        if step:
+            bits.append("Each turn covers {} days, so wages, food prices, and age scale with that.".format(
+                _fmt(step)))
         for key, noun in (("health", "Health"), ("wealth", "Wealth")):
             phrase = self._trend_phrase(key, noun)
             if phrase:
@@ -864,18 +1096,20 @@ class SimulationGuide:
         if stats["n"] == 0:
             return "Everyone has died, so the run is finished."
         if stats["sick"] >= max(2, stats["n"] // 4):
-            chance = self._get(("Health & Disease", "disease_chance_per_turn"))
-            impact = self._get(("Health & Disease", "disease_health_impact"))
+            chance = self._get(("Health & Disease", "community_case_chance_per_turn"))
             return (
                 "The clearest pressure is disease: {} people are sick. "
-                "Natural infection chance is {} per turn and each bout costs {} health."
-            ).format(stats["sick"], _fmt(chance), _fmt(impact))
+                "Community cases appear with chance {} per turn, and a hospital speeds immune repair."
+            ).format(stats["sick"], _fmt(chance))
         if stats["hungry"] >= max(2, stats["n"] // 4):
             cost = self._get(("Grocery & Needs", "grocery_food_cost"))
             return "A lot of people are hungry. Food costs ${} before regional prices, so agents who can't pay will keep losing health.".format(
                 _fmt(cost))
         if stats["employed"] * 2 < stats["n"] and stats["n"] > 2:
-            return "Employment is thin. Unemployed agents earn nothing, which feeds both migration and financial stress."
+            return (
+                "Employment is thin. Unemployed adults can draw welfare from the regional treasury, "
+                "and joblessness also makes migration and refugee flight more likely."
+            )
         gini = self.window.population.wealth_gini_coefficient()
         if gini is not None and gini >= 0.45:
             return "Wealth is uneven (Gini {:.2f}). The wealth chart shows that as a curve bending away from the diagonal.".format(gini)
@@ -896,7 +1130,7 @@ class SimulationGuide:
         if recent_sick:
             names = []
             for event in world.disease_events[-6:]:
-                name = event.get("disease")
+                name = _disease_label(event.get("disease"))
                 if name and name not in names:
                     names.append(name)
             counted = "{} infection{}".format(recent_sick, "" if recent_sick == 1 else "s")
@@ -908,11 +1142,17 @@ class SimulationGuide:
         if causes:
             listed = ", ".join("{} from {}".format(count, cause) for cause, count in causes.items())
             lines.append("Recent deaths: {}.".format(listed))
+        known = ", ".join(disease.name for disease in DISEASES.values())
         lines.append(
-            "Hunger drops by {} each turn, food restores {} health, and a hospital stay lasts {} turns.".format(
+            "The diseases are {}. Each agent has an immune system that children inherit. "
+            "Exposure starts the illness next turn. One immune bit is repaired each turn, or two in hospital, "
+            "and the agent stays until every infection is gone. "
+            "Hunger drops by {} each turn, plus the length of each active disease, and food restores {} health. "
+            "Community cases appear with chance {}.".format(
+                known,
                 _fmt(self._get(("Grocery & Needs", "hunger_drain_per_step"))),
                 _fmt(self._get(("Grocery & Needs", "grocery_food_health_restore"))),
-                _fmt(self._get(("Health & Disease", "hospital_stay_duration_turns"))),
+                _fmt(self._get(("Health & Disease", "community_case_chance_per_turn"))),
             )
         )
         return " ".join(lines)
@@ -932,9 +1172,13 @@ class SimulationGuide:
         if phrase:
             lines.append(phrase.capitalize() + ".")
         lines.append(
-            "Type 1 jobs pay ${} a turn and type 2 jobs pay ${}, before regional wages. {} currently has the highest average wealth.".format(
-                _fmt(self._get(("Economy & Jobs", "type_1_income_per_turn"))),
-                _fmt(self._get(("Economy & Jobs", "type_2_income_per_turn"))),
+            "Type 1 jobs pay ${} a year and type 2 jobs pay ${} a year, before the time step, regional wage, and income tax. "
+            "Unemployed adults can receive ${} in welfare from their region's treasury. "
+            "Grocery workers pay 75% of the local food price. "
+            "{} currently has the highest average wealth.".format(
+                _fmt(self._get(("Economy & Jobs", "type_1_income_per_year"))),
+                _fmt(self._get(("Economy & Jobs", "type_2_income_per_year"))),
+                _fmt(self._get(("Economy & Jobs", "welfare_per_unemployed"))),
                 richest,
             )
         )
@@ -947,7 +1191,9 @@ class SimulationGuide:
         for region in world.regions:
             members = [agent for agent in self._agents() if agent.region == region["id"]]
             lines.append(
-                "{name} ({country}): {pop} living here, avg wealth ${wealth:,.0f}, {jobs} open jobs, wage ×{wage}, cost of living ×{cost}, housing ×{house:.2f}.".format(
+                "{name} ({country}): {pop} living here, avg wealth ${wealth:,.0f}, {jobs} open jobs, "
+                "wage ×{wage}, cost of living ×{cost}, tax {tax}, home quality ×{quality}, "
+                "housing ×{house:.2f}, tension {tension:.2f}, treasury ${treasury:,}.".format(
                     name=region["name"],
                     country=region.get("country", "unknown"),
                     pop=len(members),
@@ -955,19 +1201,34 @@ class SimulationGuide:
                     jobs=region.get("open_jobs", 0),
                     wage=_fmt(region.get("wage_multiplier", 1)),
                     cost=_fmt(region.get("cost_multiplier", 1)),
+                    tax=_fmt(region.get("tax_rate", 0)),
+                    quality=_fmt(region.get("home_quality", 1)),
                     house=region.get("housing_price_factor", 1),
+                    tension=region.get("tension", 0),
+                    treasury=region.get("treasury", 0),
                 )
             )
-        moves = len(getattr(world, "migration_events", [])[-10:])
-        if moves:
-            lines.append("There are {} recent migration records. Move cost is ${} and the base chance is {}.".format(
-                moves,
-                _fmt(self._get(("Migration", "move_cost"))),
-                _fmt(self._get(("Migration", "base_chance"))),
-            ))
+        recent = getattr(world, "migration_events", [])[-10:]
+        refugees = sum(1 for event in recent if event.get("refugee"))
+        moves = len(recent) - refugees
+        if recent:
+            lines.append(
+                "Recent movement: {} ordinary moves and {} refugee arrivals. "
+                "A normal move starts at ${} and rises with prices and how many rich residents already live there. "
+                "Poor unemployed agents can flee for ${} instead, which can cost health and raises tension.".format(
+                    moves, refugees,
+                    _fmt(self._get(("Migration", "move_cost"))),
+                    _fmt(self._get(("Migration", "refugee_cost"))),
+                )
+            )
         else:
-            lines.append("Nobody has a recent migration on record. Agents compare wages, jobs, and housing prices before they pay ${} to move.".format(
-                _fmt(self._get(("Migration", "move_cost")))))
+            lines.append(
+                "Nobody has a recent migration on record. Adults compare wage after tax, open jobs, prices, and tension. "
+                "Moving starts at ${}, and poor unemployed agents can flee as refugees for ${}.".format(
+                    _fmt(self._get(("Migration", "move_cost"))),
+                    _fmt(self._get(("Migration", "refugee_cost"))),
+                )
+            )
         return "\n".join(lines)
 
     def _events_observation(self):
@@ -976,16 +1237,17 @@ class SimulationGuide:
         catalog = (
             ("hiring_events", lambda e: "Turn {}: agent {} was hired for {}.".format(e["turn"], e["agent_id"], e["job"])),
             ("death_events", lambda e: "Turn {}: agent {} died from {} at age {}.".format(e["turn"], e["agent_id"], e["cause"], e["age"])),
-            ("birth_events", lambda e: "Turn {}: agent {} was born.".format(e["turn"], e["agent_id"])),
-            ("disease_events", lambda e: "Turn {}: agent {} caught {}.".format(e["turn"], e["agent_id"], e["disease"])),
-            ("house_events", lambda e: "Turn {}: agent {} {} a house.".format(e["turn"], e["agent_id"], e["event"])),
+            ("birth_events", self._birth_line),
+            ("disease_events", self._disease_line),
+            ("hospital_events", self._hospital_line),
+            ("house_events", self._house_line),
             ("grocery_events", lambda e: "Turn {}: agent {} bought food for ${:,}.".format(e["turn"], e["agent_id"], e["cost"])),
-            ("migration_events", lambda e: "Turn {}: agent {} migrated.".format(e.get("turn", "?"), e.get("agent_id", "?"))),
+            ("migration_events", self._migration_line),
         )
         for name, render in catalog:
             for event in getattr(world, name, [])[-4:]:
                 try:
-                    items.append((event.get("turn", 0), render(event)))
+                    items.append((self._event_turn(event), render(event)))
                 except (KeyError, TypeError):
                     continue
         if not items:
@@ -1006,15 +1268,27 @@ class SimulationGuide:
         if self.window.world and 0 <= agent.region < len(self.window.world.regions):
             region = self.window.world.regions[agent.region]["name"]
         status = "alive" if alive else "deceased"
-        diseases = ", ".join(sorted(agent.diseases)) or "none"
+        diseases = ", ".join(_disease_label(disease) for disease in sorted(agent.diseases)) or "none"
+        pending = ", ".join(
+            _disease_label(disease) for disease in sorted(getattr(agent, "pending_diseases", ()))
+        ) or "none"
+        pregnancies = getattr(self.window.population, "pregnancies", {})
+        pregnant = " Pregnant." if agent.id in pregnancies else ""
         return (
-            "Agent {id} is {status}. Age {age}, health {hp}/100, mental health {mental}/100, "
+            "Agent {id} ({name}) is {status}.{pregnant} {gender}, {ethnicity}, age {age}, "
+            "intelligence {intelligence}. Health {hp}/100, mental health {mental}/100, "
             "hunger {hunger}/{hunger_max}, wealth ${wealth:,}. Job: {job}. Home: {home}. "
-            "Region: {region}. Diseases: {diseases}."
+            "Region: {region}. Migrated: {migrated}. In hospital: {hospital}. "
+            "Diseases: {diseases}. Exposed, ill next turn: {pending}."
         ).format(
             id=agent.id,
+            name=getattr(agent, "name", "unnamed"),
             status=status,
+            pregnant=pregnant,
+            gender=getattr(agent, "gender", "unknown"),
+            ethnicity=getattr(agent, "ethnicity", "unknown"),
             age=agent.age,
+            intelligence=getattr(agent, "intelligence", "unknown"),
             hp=agent.health,
             mental=agent.mental_health,
             hunger=agent.hunger,
@@ -1023,7 +1297,10 @@ class SimulationGuide:
             job=agent.job or "unemployed",
             home="({}, {})".format(*agent.house) if agent.house else "homeless",
             region=region,
+            migrated="yes" if getattr(agent, "has_migrated", False) else "no",
+            hospital="yes" if getattr(agent, "hospitalized_at", None) is not None else "no",
             diseases=diseases,
+            pending=pending,
         )
 
     def _view_observation(self):
@@ -1088,14 +1365,31 @@ class SimulationGuide:
         if name == "death_events":
             return "Agent {} died from {} at age {}.".format(agent, event.get("cause"), event.get("age"))
         if name == "disease_events":
-            return "Agent {} caught {}.".format(agent, event.get("disease"))
+            return "Agent {} caught {} {}.".format(
+                agent, _disease_label(event.get("disease")), _disease_source(event))
         if name == "birth_events":
+            parents = event.get("parent_names") or ()
+            if len(parents) == 2:
+                return "Agent {} was born to {} and {}.".format(agent, parents[0], parents[1])
             return "Agent {} was born.".format(agent)
         if name == "hospital_events":
-            diseases = ", ".join(event.get("diseases") or []) or "an illness"
-            return "Agent {} was admitted to hospital with {}.".format(agent, diseases)
+            diseases = ", ".join(
+                _disease_label(disease) for disease in (event.get("diseases") or [])
+            ) or "an illness"
+            if event.get("outcome") == "cured":
+                return "Agent {} left the hospital recovered from {}.".format(agent, diseases)
+            return "Agent {} was admitted to hospital with {}; immune repair is accelerated.".format(
+                agent, diseases)
         if name == "house_events":
-            return "Agent {} {} a house.".format(agent, event.get("event"))
+            action = event.get("event")
+            amount = event.get("amount", 0)
+            if action == "evicted":
+                return "Agent {} was evicted.".format(agent)
+            if action == "paid":
+                return "Agent {} paid ${:,} rent.".format(agent, amount)
+            if action == "bought":
+                return "Agent {} rented a home for ${:,}.".format(agent, amount)
+            return "Agent {} had a housing event ({}).".format(agent, action)
         if name == "grocery_events":
             return "Agent {} bought food for ${:,}.".format(agent, event.get("cost", 0))
         if name == "school_events":
@@ -1109,8 +1403,58 @@ class SimulationGuide:
             return "{} and {} are now {}.".format(
                 event.get("first_name"), event.get("second_name"), event.get("stage"))
         if name == "migration_events":
-            return "Agent {} migrated.".format(agent)
+            how = "fled as a refugee" if event.get("refugee") else "migrated"
+            origin = event.get("from")
+            destination = event.get("to")
+            if origin and destination:
+                return "Agent {} {} from {} to {}.".format(agent, how, origin, destination)
+            return "Agent {} {}.".format(agent, how)
         return None
+
+    def _event_turn(self, event):
+        return event.get("turn", event.get("admitted_turn", 0))
+
+    def _disease_line(self, event):
+        return "Turn {}: agent {} caught {} {}.".format(
+            self._event_turn(event), event["agent_id"],
+            _disease_label(event.get("disease")), _disease_source(event))
+
+    def _birth_line(self, event):
+        parents = event.get("parent_names") or ()
+        if len(parents) == 2:
+            return "Turn {}: agent {} was born to {} and {}.".format(
+                self._event_turn(event), event["agent_id"], parents[0], parents[1])
+        return "Turn {}: agent {} was born.".format(self._event_turn(event), event["agent_id"])
+
+    def _hospital_line(self, event):
+        diseases = ", ".join(
+            _disease_label(disease) for disease in (event.get("diseases") or [])
+        ) or "an illness"
+        turn = self._event_turn(event)
+        if event.get("outcome") == "cured":
+            return "Turn {}: agent {} left the hospital recovered from {}.".format(
+                event.get("cured_turn", turn), event["agent_id"], diseases)
+        return "Turn {}: agent {} was admitted to hospital with {}.".format(
+            turn, event["agent_id"], diseases)
+
+    def _house_line(self, event):
+        agent = event["agent_id"]
+        action = event.get("event")
+        amount = event.get("amount", 0)
+        turn = self._event_turn(event)
+        if action == "evicted":
+            return "Turn {}: agent {} was evicted.".format(turn, agent)
+        if action == "paid":
+            return "Turn {}: agent {} paid ${:,} rent.".format(turn, agent, amount)
+        if action == "bought":
+            return "Turn {}: agent {} rented a home for ${:,}.".format(turn, agent, amount)
+        return "Turn {}: agent {} had a housing event ({}).".format(turn, agent, action)
+
+    def _migration_line(self, event):
+        how = "fled as a refugee" if event.get("refugee") else "migrated"
+        return "Turn {}: agent {} {} from {} to {}.".format(
+            self._event_turn(event), event.get("agent_id", "?"), how,
+            event.get("from", "somewhere"), event.get("to", "somewhere"))
 
     def _turns_mentioned(self, text):
         found = []
@@ -1158,12 +1502,21 @@ class SimulationGuide:
             "birth_events": "births",
             "disease_events": "new infections",
             "hiring_events": "hires",
-            "migration_events": "moves",
+            "hospital_events": "hospital admissions",
         }
         for name, label in labels.items():
             delta = current.get(name, 0) - self._seen.get(name, 0)
             if delta > 0:
                 notes.append((label, delta))
+        world = self.window.world
+        start = self._seen.get("migration_events", 0)
+        arrivals = getattr(world, "migration_events", [])[start:] if world else []
+        refugees = sum(1 for event in arrivals if event.get("refugee"))
+        moves = len(arrivals) - refugees
+        if moves:
+            notes.append(("moves", moves))
+        if refugees:
+            notes.append(("refugee arrivals", refugees))
         return notes
 
     def _signature(self):
