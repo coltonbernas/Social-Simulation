@@ -4,15 +4,27 @@ try:
     from .agent import Agent
     from .migration import process_migration
     from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+    from .disease import (
+        activate_pending_infections, combine_parent_immune_systems,
+        disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
+    )
 except ImportError:
     try:
         from pythonFiles.agent import Agent
         from pythonFiles.migration import process_migration
         from pythonFiles.config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+        from pythonFiles.disease import (
+            activate_pending_infections, combine_parent_immune_systems,
+            disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
+        )
     except ImportError:
         from agent import Agent
         from migration import process_migration
         from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
+        from disease import (
+            activate_pending_infections, combine_parent_immune_systems,
+            disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
+        )
 
 
 class Population:
@@ -24,9 +36,137 @@ class Population:
             agent_cfg = config.get("Agent & Population", config) if isinstance(config, dict) else {}
             count = agent_cfg.get("agent_count", config.get("agent_count", agent_count))
 
-        self.agents = [Agent(agent_id=i, world_obj=world_obj) for i in range(count)]
+        predefined = bool(getattr(world_obj, "config", {}).get(
+            "start_with_predefined_positions", False
+        ))
+        self.agents = [
+            Agent(agent_id=i, world_obj=world_obj,
+                  age=random.randint(1, 80) if predefined else None)
+            for i in range(count)
+        ]
         self.all_agents = list(self.agents)
+        world_obj.agent_lookup = {agent.id: agent for agent in self.all_agents}
         self.next_agent_id = count
+        self.pregnancies = {}
+        if predefined:
+            self._initialize_predefined_start(world_obj)
+
+    def _initialize_predefined_start(self, world_obj):
+        """Seed a varied starting population while preserving normal agent traits."""
+        # Pair some agents, with married and dating relationships represented
+        # using the same fields as relationships formed during play.
+        shuffled = list(self.agents)
+        random.shuffle(shuffled)
+        household_groups = []
+        index = 0
+        while index + 1 < len(shuffled):
+            if random.random() < 0.45:
+                first, second = shuffled[index:index + 2]
+                index += 2
+                first.dating_partner_id = second.id
+                second.dating_partner_id = first.id
+                first.dating_since_turn = second.dating_since_turn = world_obj.turnNo
+                if random.random() < 0.5:
+                    first.marital_status = second.marital_status = "married"
+                household_groups.append([first, second])
+            else:
+                household_groups.append([shuffled[index]])
+                index += 1
+        if index < len(shuffled):
+            household_groups.append([shuffled[index]])
+
+        # Give some minors a parent from an older household, so shared homes
+        # follow the same owner/partner/child rule as homes acquired later.
+        for child in [agent for agent in shuffled if agent.age < 18]:
+            if random.random() >= 0.65:
+                continue
+            existing_group = next(
+                (group for group in household_groups if child in group), None
+            )
+            if existing_group is not None and len(existing_group) > 1:
+                continue
+            possible_groups = [
+                group for group in household_groups
+                if len(group) < 6
+                and group[0].age >= 25
+                and group[0].region == child.region
+                and child not in group
+            ]
+            if not possible_groups:
+                continue
+            group = random.choice(possible_groups)
+            parent = group[0]
+            child.parent_ids.add(parent.id)
+            parent.children_ids.add(child.id)
+            group.append(child)
+            if existing_group is not None:
+                household_groups.remove(existing_group)
+
+        # Jobs are assigned from real openings, with jobless agents and the two
+        # less common job types weighted lower than the other available jobs.
+        for agent in self.agents:
+            if agent.age < 15:
+                continue
+            openings = [
+                (location, world_obj.grid[location[0]][location[1]])
+                for location, holders in world_obj.building_jobs.items()
+                for _ in range(max(0, world_obj.job_capacities[location] - len(holders)))
+            ]
+            if not openings or random.random() < 0.25:
+                continue
+            selected = random.choices(
+                openings,
+                weights=[0.2 if opening[1] in (2, 5) else 1.0
+                         for opening in openings],
+                k=1,
+            )[0]
+            location, building_type = selected
+            world_obj.building_jobs[location].add(agent.id)
+            agent.job = world_obj.job_name(building_type)
+            agent.employed_at = location
+
+        for agent in self.agents:
+            building_type = world_obj.job_type(agent.job) if agent.job else None
+            annual_wage = (
+                world_obj.job_income_per_year(building_type)
+                * world_obj.regions[agent.region]["wage_multiplier"]
+                if building_type is not None else 0
+            )
+            midpoint = annual_wage * agent.age
+            agent.wealth = int(round(midpoint * random.uniform(0.5, 1.5)))
+
+            if random.random() < 0.10:
+                susceptible = [
+                    disease for disease in DISEASE_ORDER
+                    if not is_immune(agent.immune_system, disease)
+                ]
+                if susceptible:
+                    agent.diseases.add(random.choice(susceptible))
+
+        # Each household gets a randomly selected available home. Premium
+        # houses (type 7) are deliberately less likely than other home types.
+        for group in household_groups:
+            if len(group) > 6 or len({agent.region for agent in group}) != 1:
+                continue
+            region_id = group[0].region
+            choices = [
+                location for location in world_obj.houses
+                if world_obj.region_of(*location) == region_id
+                and not any(agent.house == location for agent in self.agents)
+            ]
+            if not choices:
+                continue
+            location = random.choices(
+                choices,
+                weights=[0.2 if world_obj.grid[row][col] == 7 else 1.0
+                         for row, col in choices],
+                k=1,
+            )[0]
+            owner = next((agent for agent in group if agent.age >= 18), group[0])
+            world_obj.house_owners[location] = owner.id
+            for agent in group:
+                agent.house = location
+                world_obj.houses[location].add(agent.id)
 
     def birth(self, world_obj):
         """Create and add a newborn agent whose age is exactly 0."""
@@ -39,6 +179,7 @@ class Population:
         self.next_agent_id += 1
         self.agents.append(newborn)
         self.all_agents.append(newborn)
+        world_obj.agent_lookup[newborn.id] = newborn
         return newborn
 
     def birth_child(self, world_obj, first_parent, second_parent):
@@ -72,11 +213,15 @@ class Population:
             birth_turn=world_obj.turnNo + 1,
             religion=random.choice((first_parent.religion, second_parent.religion)),
             region_id=random.choice((first_parent.region, second_parent.region)),
-
+            original_immune_system=combine_parent_immune_systems(
+                first_parent.original_immune_system,
+                second_parent.original_immune_system,
+            ),
         )
         self.next_agent_id += 1
         self.agents.append(newborn)
         self.all_agents.append(newborn)
+        world_obj.agent_lookup[newborn.id] = newborn
         first_parent.children_ids.add(newborn.id)
         second_parent.children_ids.add(newborn.id)
         world_obj.birth_events.append({
@@ -161,10 +306,6 @@ class Population:
             first.name, second.name, relationship_points, relationship_stage,
             len(first_locations), len(second_locations)
         ))
-
-        # Close encounters can transmit disease, with risk adjusted for recipient health.
-        self._try_transmission(first, second, world_obj)
-        self._try_transmission(second, first, world_obj)
 
     @staticmethod
     def _are_siblings(first, second):
@@ -271,25 +412,9 @@ class Population:
             giver.wealth, receiver.wealth
         ))
 
-    @staticmethod
-    def _try_transmission(source, target, world_obj):
-        if not source.diseases:
-            return
-        disease = sorted(source.diseases)[0]
-        # Pass world_obj so catch_disease can read active UI sliders
-        if target.catch_disease(world_obj, disease):
-            world_obj.disease_events.append({
-                "turn": world_obj.turnNo + 1,
-                "source_id": source.id,
-                "agent_id": target.id,
-                "disease": disease,
-                "health": target.health,
-            })
-            print("Agent {} caught {} passed by Agent {} (health: {}).".format(
-                target.id, disease, source.id, target.health
-            ))
-
     def step_agents(self, world_obj):
+        activate_pending_infections(self.agents)
+
         # Age advances by the selected calendar interval; survival remains tied
         # to each agent's natural death age, which is measured in years.
         age_increment = getattr(world_obj, "time_step_days", 365.25) / 365.25
@@ -312,19 +437,13 @@ class Population:
 
         # Record sightings after all agents have moved so each pair interacts at
         # most once when they newly enter one another's adjacent sight line.
-        agents_by_id = {agent.id: agent for agent in self.agents}
-        blocked_pairs = set()
         for agent in self.agents:
-            other_agent_id = agent.move(world_obj)
-            if other_agent_id is not None:
-                blocked_pairs.add(tuple(sorted((agent.id, other_agent_id))))
+            agent.move(world_obj)
 
         current_sightings = {agent.id: set() for agent in self.agents}
-        interacted_pairs = set()
         for index, first in enumerate(self.agents):
             for second in self.agents[index + 1:]:
                 if max(abs(first.pos_x - second.pos_x), abs(first.pos_y - second.pos_y)) <= 1:
-                    pair = (first.id, second.id)
                     current_sightings[first.id].add(second.id)
                     current_sightings[second.id].add(first.id)
                     newly_visible = (
@@ -333,22 +452,13 @@ class Population:
                     )
                     if newly_visible:
                         self.share_information(first, second, world_obj)
-                        interacted_pairs.add(pair)
-
-        # Preserve collision-based disease transmission when the pair was
-        # already visible and therefore did not create a new interaction.
-        for first_id, second_id in blocked_pairs - interacted_pairs:
-            first = agents_by_id.get(first_id)
-            second = agents_by_id.get(second_id)
-            if first is not None and second is not None:
-                self._try_transmission(first, second, world_obj)
-                self._try_transmission(second, first, world_obj)
 
         for agent in self.agents:
             agent.visible_agent_ids = current_sightings[agent.id]
         self._process_marriages(world_obj)
         self._process_births(world_obj)
         process_migration(self, world_obj)
+        process_disease_turn(self.agents, world_obj)
         for agent in list(self.agents):
             if agent.health <= 0:
                 self._remove_agent(agent, world_obj, "zero health")
@@ -371,8 +481,7 @@ class Population:
             threshold = child._get_cfg_val(world_obj, "Grocery & Needs",
                                            "grocery_hunger_threshold", grocery_hunger_threshold)
             if (not child.parent_ids or child.birth_turn is None
-                    or turn - child.birth_turn > 10
-                    or child.hunger >= threshold):
+                    or child.age >= 15 or child.hunger >= threshold):
                 continue
             shortfall = max(0, world_obj.food_cost(child.region) - child.wealth)
             parents = [parent for parent in self.agents if parent.id in child.parent_ids]
@@ -392,9 +501,22 @@ class Population:
                     break
 
     def _process_births(self, world_obj):
-        """Give an eligible dating pair one child after more than five turns."""
+        """Conceive after the existing relationship wait and deliver after nine months."""
         turn = world_obj.turnNo + 1
         agents_by_id = {agent.id: agent for agent in self.agents}
+        gestation_days = 9 * (365.25 / 12)
+        elapsed_days = getattr(world_obj, "elapsed_days", 0.0)
+        days_at_turn_end = elapsed_days + getattr(world_obj, "time_step_days", 365.25)
+        for mother_id, pregnancy in list(self.pregnancies.items()):
+            mother = agents_by_id.get(mother_id)
+            father = agents_by_id.get(pregnancy["father_id"])
+            if mother is None or father is None:
+                del self.pregnancies[mother_id]
+                continue
+            if days_at_turn_end - pregnancy["start_day"] >= gestation_days:
+                self.birth_child(world_obj, mother, father)
+                del self.pregnancies[mother_id]
+
         for first in list(self.agents):
             partner_id = first.dating_partner_id
             if (partner_id is None
@@ -406,7 +528,14 @@ class Population:
                     or self._are_siblings(first, second)
                     or first.children_ids.intersection(second.children_ids)):
                 continue
-            self.birth_child(world_obj, first, second)
+            mother, father = (first, second) if first.gender == "female" else (second, first)
+            if (mother.gender != "female" or mother.age < 18
+                    or mother.id in self.pregnancies):
+                continue
+            self.pregnancies[mother.id] = {
+                "father_id": father.id,
+                "start_day": elapsed_days,
+            }
 
     def _process_marriages(self, world_obj):
         """Marry dating couples after five turns if they can cover the wedding."""
@@ -542,13 +671,15 @@ class Population:
         for agent in self.all_agents:
             death = deaths_by_agent.get(agent.id)
             if death:
-                print("  Agent {}: DIED at age {} (cause: {}); end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
-                    agent.id, death["age"], death["cause"], agent.intelligence,
+                print("  Agent {}: DIED at age {} (cause: {}); birthplace: {}; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
+                    agent.id, death["age"], death["cause"], agent.birth_place,
+                    agent.intelligence,
                     agent.personality_type, agent.gender, agent.ethnicity, agent.religion
                 ))
             else:
-                print("  Agent {}: alive; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
-                    agent.id, agent.intelligence, agent.personality_type, agent.gender,
+                print("  Agent {}: alive; birthplace: {}; end intelligence: {}; personality: {}; gender: {}; ethnicity: {}; religion: {}".format(
+                    agent.id, agent.birth_place, agent.intelligence,
+                    agent.personality_type, agent.gender,
                     agent.ethnicity, agent.religion
                 ))
 
@@ -639,11 +770,15 @@ class Population:
             for event in world_obj.disease_events:
                 if event.get("source") == "natural":
                     print("  Turn {}: Agent {} contracted {} naturally".format(
-                        event["turn"], event["agent_id"], event["disease"]
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
+                    ))
+                elif event.get("source") == "user":
+                    print("  Turn {}: Agent {} was exposed to {} by the user".format(
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
                     ))
                 else:
                     print("  Turn {}: Agent {} caught {} passed by Agent {}".format(
-                        event["turn"], event["agent_id"], event["disease"],
+                        event["turn"], event["agent_id"], disease_name(event["disease"]),
                         event["source_id"]
                     ))
         else:
@@ -668,7 +803,9 @@ class Population:
         if world_obj.hospital_events:
             for event in world_obj.hospital_events:
                 x, y = event["position"]
-                diseases = ", ".join(event["diseases"])
+                diseases = ", ".join(
+                    disease_name(disease) for disease in event["diseases"]
+                )
                 if event["outcome"] == "cured":
                     print("  Agent {} admitted on turn {} with {}; cured after {} turn(s) on turn {} at ({}, {}).".format(
                         event["agent_id"], event["admitted_turn"], diseases,
@@ -717,7 +854,9 @@ class Population:
 
         print("\nAgent health:")
         for agent in self.all_agents:
-            diseases = ", ".join(sorted(agent.diseases)) or "none"
+            diseases = ", ".join(
+                disease_name(disease) for disease in sorted(agent.diseases)
+            ) or "none"
             print("  Agent {}: {}/100; diseases: {}".format(agent.id, agent.health, diseases))
 
         print("\nAgent mental health:")
@@ -743,12 +882,8 @@ class Population:
         print("\nCommunications:")
         if world_obj.communication_events:
             for event in world_obj.communication_events:
-                locations = ", ".join(
-                    "({}, {})".format(x, y)
-                    for x, y in event["empty_locations"]
-                ) or "none known"
-                print("  Turn {}: {} interacted with {}; shared building-free locations: {}".format(
-                    event["turn"], event["sender_name"], event["receiver_name"], locations
+                print("  Turn {}: {} shared map information with {}.".format(
+                    event["turn"], event["sender_name"], event["receiver_name"]
                 ))
         else:
             print("  No messages were exchanged.")
@@ -951,11 +1086,15 @@ class Population:
             for event in disease_events:
                 if event.get("source") == "natural":
                     print("  Turn {}: Agent {} contracted {} naturally".format(
-                        event["turn"], event["agent_id"], event["disease"]
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
+                    ))
+                elif event.get("source") == "user":
+                    print("  Turn {}: Agent {} was exposed to {} by the user".format(
+                        event["turn"], event["agent_id"], disease_name(event["disease"])
                     ))
                 else:
                     print("  Turn {}: Agent {} caught {} passed by Agent {}".format(
-                        event["turn"], event["agent_id"], event["disease"],
+                        event["turn"], event["agent_id"], disease_name(event["disease"]),
                         event["source_id"]
                     ))
         else:
@@ -1021,12 +1160,8 @@ class Population:
         print("Communications:")
         if communications:
             for event in communications:
-                locations = ", ".join(
-                    "({}, {})".format(x, y)
-                    for x, y in event["empty_locations"]
-                ) or "none known"
-                print("  Turn {}: {} interacted with {}; shared building-free locations: {}".format(
-                    event["turn"], event["sender_name"], event["receiver_name"], locations
+                print("  Turn {}: {} shared map information with {}.".format(
+                    event["turn"], event["sender_name"], event["receiver_name"]
                 ))
         else:
             print("  None")

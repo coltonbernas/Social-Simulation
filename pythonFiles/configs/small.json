@@ -6,6 +6,11 @@
     "Building Counts": {
         "type_1_workplace": 20,
         "type_2_workplace": 6,
+        "type_3_workplace": 2,
+        "type_4_workplace": 2,
+        "type_5_workplace": 1,
+        "apartment_building": 2,
+        "hotel": 2,
         "school": 4,
         "grocery_store": 6,
         "hospital": 3,
@@ -20,14 +25,25 @@
         "health_max": 100
     },
     "Health & Disease": {
-        "base_disease_transmission": 0.02,
-        "disease_health_impact": 1,
-        "disease_chance_per_turn": 0.01,
-        "hospital_stay_duration_turns": 3
+        "community_case_chance_per_turn": 0.01
     },
     "Economy & Jobs": {
-        "type_1_income_per_turn": 100,
-        "type_2_income_per_turn": 250,
+        "type_1_income_per_year": 36525,
+        "type_2_income_per_year": 91312.5,
+        "grocery_store_income_per_year": 32000,
+        "hospital_income_per_year": 110000,
+        "type_3_income_per_year": 50000,
+        "type_4_income_per_year": 25000,
+        "type_5_income_per_year": 70000,
+        "type_1_application_threshold": 60,
+        "type_2_application_threshold": 73,
+        "grocery_store_application_threshold": 58.93,
+        "hospital_application_threshold": 77.43,
+        "type_3_application_threshold": 63.2,
+        "type_4_application_threshold": 57.27,
+        "type_5_application_threshold": 67.94,
+        "apartment_rent_per_day": 200,
+        "hotel_rent_per_day": 100,
         "budget_house_cost": 300,
         "premium_house_cost": 700,
         "low_wealth_threshold": 1000,

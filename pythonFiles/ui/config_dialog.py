@@ -29,6 +29,9 @@ class ConfigDialog(tk.Toplevel):
 
         self.original_config = json.loads(json.dumps(config_data))
         self.result = json.loads(json.dumps(config_data))
+        self.predefined_start_var = tk.BooleanVar(
+            value=bool(config_data.get("start_with_predefined_positions", False))
+        )
         self.controls = {}
 
         # Hide window while constructing UI to eliminate loading flicker/lag
@@ -53,6 +56,21 @@ class ConfigDialog(tk.Toplevel):
             text="Adjust parameters with sliders or click values to type directly. Uncheck to use default.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
+
+        tk.Checkbutton(
+            header,
+            text="Start with predefined positions",
+            variable=self.predefined_start_var,
+            bg=BG,
+            fg=TEXT,
+            selectcolor=PANEL,
+            activebackground=BG,
+            activeforeground=TEXT,
+            highlightthickness=0,
+            relief="flat",
+            borderwidth=0,
+            font=(FONT, 9),
+        ).pack(anchor="w", pady=(8, 0))
 
         # Scrollable container setup
         container = ttk.Frame(self)
@@ -308,6 +326,7 @@ class ConfigDialog(tk.Toplevel):
 
     def _on_confirm(self):
         self._cleanup_bindings()
+        self.result["start_with_predefined_positions"] = self.predefined_start_var.get()
         for key_path, ctrl in self.controls.items():
             final_val = ctrl["value"].get() if ctrl["enabled"].get() else ctrl["default"]
             curr = self.result
@@ -318,6 +337,7 @@ class ConfigDialog(tk.Toplevel):
 
     def _on_defaults(self):
         """Resets the UI controls to the values present when the dialog was opened."""
+        self.predefined_start_var.set(False)
         for key_path, ctrl in self.controls.items():
             # Retrieve the value from the original_config passed during __init__
             curr = self.original_config
@@ -351,6 +371,7 @@ class ConfigDialog(tk.Toplevel):
         if name:
             # Collect current values from UI
             current_data = json.loads(json.dumps(self.result))
+            current_data["start_with_predefined_positions"] = self.predefined_start_var.get()
             for key_path, ctrl in self.controls.items():
                 val = ctrl["value"].get()
                 curr = current_data
@@ -375,6 +396,9 @@ class ConfigDialog(tk.Toplevel):
                 loaded_data = json.load(f)
             
             # Update UI controls
+            self.predefined_start_var.set(
+                bool(loaded_data.get("start_with_predefined_positions", False))
+            )
             for key_path, ctrl in self.controls.items():
                 curr = loaded_data
                 try:

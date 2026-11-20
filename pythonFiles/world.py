@@ -8,21 +8,21 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "default.jso
 
 try:
     from pythonFiles.config import (
-        grid_rows, grid_cols, building_counts,
-        type_1_income_per_turn, type_2_income_per_turn,
+        grid_rows, grid_cols, building_counts, job_income_per_year, job_names,
+        type_1_income_per_year, type_2_income_per_year,
         grocery_food_cost,
     )
 except ImportError:
     try:
         from .config import (
-            grid_rows, grid_cols, building_counts,
-            type_1_income_per_turn, type_2_income_per_turn,
+            grid_rows, grid_cols, building_counts, job_income_per_year, job_names,
+            type_1_income_per_year, type_2_income_per_year,
             grocery_food_cost,
         )
     except ImportError:
         from config import (
-            grid_rows, grid_cols, building_counts,
-            type_1_income_per_turn, type_2_income_per_turn,
+            grid_rows, grid_cols, building_counts, job_income_per_year, job_names,
+            type_1_income_per_year, type_2_income_per_year,
             grocery_food_cost,
         )
 
@@ -68,6 +68,8 @@ class World:
             raise ValueError("Total building count cannot exceed the number of grid cells")
 
         self.building_jobs = {}
+        self.job_capacities = {}
+        self.workplace_occupants = {}
         self.job_opening_versions = {}
         self.school_occupants = {}
         self.grocery_stores = set()
@@ -75,6 +77,8 @@ class World:
         self.hospitals = set()
         self.hospital_occupants = {}
         self.houses = {}
+        self.house_owners = {}
+        self.agent_lookup = {}
 
         self.house_events = []
         self.hospital_events = []
@@ -101,18 +105,19 @@ class World:
 
     @property
     def open_jobs(self):
-        return sum(job_holder is None for job_holder in self.building_jobs.values())
+        return sum(self.job_capacities[location] - len(holders)
+                   for location, holders in self.building_jobs.items())
 
     def can_accept_application(self, agents):
         return any(
-            holder is None
+            len(holders) < self.job_capacities[location]
             and any(
-                agent.can_apply_for_type(self.grid[location[0]][location[1]])
+                agent.can_apply_for_type(self.grid[location[0]][location[1]], self)
                 and agent.applied_buildings.get(location)
                 != self.job_opening_versions[location]
                 for agent in agents
             )
-            for location, holder in self.building_jobs.items()
+            for location, holders in self.building_jobs.items()
         )
 
     def has_school_activity(self, agents):
@@ -126,9 +131,10 @@ class World:
 
     def reopen_job(self, location, former_holder, reason="left the job"):
         """Vacate a job and notify agents that its opening is available again."""
-        if self.building_jobs.get(location) != former_holder.id:
+        holders = self.building_jobs.get(location)
+        if holders is None or former_holder.id not in holders:
             return False
-        self.building_jobs[location] = None
+        holders.remove(former_holder.id)
         self.job_opening_versions[location] += 1
         event = {
             "turn": self.turnNo + 1,
@@ -181,6 +187,12 @@ class World:
                 "economy_score": 0.5,
                 "immigrants": 0,
                 "emigrants": 0,
+                "tax_rate": vals.get("tax_rate", 0.0),
+                "home_quality": vals.get("home_quality", 1.0),
+                "tension": 0.0,
+                "rich_share": 0.0,
+                "treasury": 0,
+                "tax_collected": 0,
             })
         for region in self.regions:
             print("Region {} '{}' ({}): rows {}-{}, cols {}-{}; wage x{}, cost of living x{}".format(
@@ -210,6 +222,11 @@ class World:
             "hospital": 5,
             "budget_house": 6,
             "premium_house": 7,
+            "type_3_workplace": 8,
+            "type_4_workplace": 9,
+            "type_5_workplace": 10,
+            "apartment_building": 11,
+            "hotel": 12,
         }
         for name, building_type in names_to_types.items():
             if name in counts:
@@ -242,7 +259,7 @@ class World:
             center_col = (region["col_start"] + region["col_end"]) / 2
             # Keep workplaces, hospitals, and grocery stores in the compact
             # downtown core, with schools and homes near residential clusters.
-            if building_type in (1, 2, 4, 5):
+            if building_type in (1, 2, 4, 5, 8, 9, 10, 12):
                 candidates = [cell for cell in cells
                               if max(abs(cell[0] - center_row),
                                      abs(cell[1] - center_col)) <= 1.5]
@@ -284,7 +301,7 @@ class World:
             free_cells.remove(selected)
             placed.append((building_type, selected))
             region_building_counts[region["id"]] += 1
-            if building_type in (6, 7):
+            if building_type in (6, 7, 11):
                 centers = neighborhood_centers(region)
                 selected_neighborhood = min(
                     range(len(centers)),
@@ -297,7 +314,7 @@ class World:
         # Seed each downtown with a mix of requested major uses before filling
         # in the extra Type 1 workplaces and other buildings.
         for region in self.regions:
-            for wanted in (1, 2, 4, 5, 6):
+            for wanted in (1, 2, 4, 5, 6, 8, 9, 10, 11, 12):
                 if wanted in requested_types and place(wanted, region):
                     requested_types.remove(wanted)
 
@@ -328,10 +345,13 @@ class World:
             elif building_type == 5:
                 self.hospitals.add(location)
                 self.hospital_occupants[location] = set()
-            elif building_type in (6, 7):
+            elif building_type in (6, 7, 11, 12):
                 self.houses[location] = set()
-            else:
-                self.building_jobs[location] = None
+            if building_type in (1, 2, 4, 5, 8, 9, 10):
+                capacity = {1: 1, 2: 1, 4: 2, 5: 2, 8: 2, 9: 3, 10: 1}[building_type]
+                self.building_jobs[location] = set()
+                self.job_capacities[location] = capacity
+                self.workplace_occupants[location] = set()
                 self.job_opening_versions[location] = 0
 
     def region_distance(self, first_id, second_id):
@@ -356,6 +376,8 @@ class World:
         w_wealth = self._setting("Regional Economy", "wealth_weight", 0.2)
         wealth_ref = max(1, self._setting("Regional Economy", "wealth_reference", 1000))
         weight_total = (w_wage + w_jobs + w_wealth) or 1.0
+        rich_line = self._setting("Migration", "rich_wealth_threshold", 3000)
+        rich_line = self._setting("Migration", "rich_wealth_threshold", 3000)
 
         residents = {region["id"]: [] for region in self.regions}
         for agent in agents:
@@ -364,9 +386,8 @@ class World:
         for location in self.houses:
             house_counts[self.region_of(*location)] += 1
         open_jobs = dict.fromkeys(residents, 0)
-        for location, holder in self.building_jobs.items():
-            if holder is None:
-                open_jobs[self.region_of(*location)] += 1
+        for location, holders in self.building_jobs.items():
+            open_jobs[self.region_of(*location)] += self.job_capacities[location] - len(holders)
 
         for region in self.regions:
             rid = region["id"]
@@ -379,6 +400,8 @@ class World:
             region["job_seekers"] = sum(1 for a in adults if not a.job)
             region["open_jobs"] = open_jobs[rid]
             region["house_count"] = house_counts[rid]
+            region["rich_share"] = (
+                sum(1 for a in people if a.wealth >= rich_line) / count if count else 0.0)
 
             if reprice:
                 # Housing demand: more people per house building pushes prices up.
@@ -405,24 +428,114 @@ class World:
         return self.config.get(key, fallback)
 
     def income_for(self, job, region_id):
-        if job == "Type 1 job":
-            base = self._setting("Economy & Jobs", "type_1_income_per_turn", type_1_income_per_turn)
-        elif job == "Type 2 job":
-            base = self._setting("Economy & Jobs", "type_2_income_per_turn", type_2_income_per_turn)
-        else:
+        building_type = next((kind for kind, title in {
+            1: "Type 1 job", 2: "Type 2 job", 4: "Grocery Store job",
+            5: "Hospital job", 8: "Type 3 job", 9: "Type 4 job", 10: "Type 5 job",
+        }.items() if title == job), None)
+        if building_type is None:
             return 0
-        return int(round(base * self.regions[region_id]["wage_multiplier"]))
+        base = self.job_income_per_year(building_type)
+        days = getattr(self, "time_step_days", 1.0)
+        return int(round(base * days / 365.25 * self.regions[region_id]["wage_multiplier"]))
+
+    def job_name(self, building_type):
+        return job_names[building_type]
+
+    def job_type(self, job):
+        return next((building_type for building_type, name in job_names.items()
+                     if name == job), None)
+
+    def job_income_per_year(self, building_type):
+        key = {1: "type_1_income_per_year", 2: "type_2_income_per_year",
+               4: "grocery_store_income_per_year", 5: "hospital_income_per_year",
+               8: "type_3_income_per_year", 9: "type_4_income_per_year",
+               10: "type_5_income_per_year"}[building_type]
+        economy = self.config.get("Economy & Jobs", {})
+        if key in economy:
+            return economy[key]
+        if building_type in (1, 2):
+            legacy_key = "type_{}_income_per_turn".format(building_type)
+            if legacy_key in economy:
+                return economy[legacy_key] * 365.25
+        return job_income_per_year[building_type]
+
+    def job_application_threshold(self, building_type):
+        key = {
+            1: "type_1_application_threshold",
+            2: "type_2_application_threshold",
+            4: "grocery_store_application_threshold",
+            5: "hospital_application_threshold",
+            8: "type_3_application_threshold",
+            9: "type_4_application_threshold",
+            10: "type_5_application_threshold",
+        }[building_type]
+        economy = self.config.get("Economy & Jobs", {})
+        if key in economy:
+            return economy[key]
+        annual_income = self.job_income_per_year(building_type)
+        return max(50, min(90, 60 + (annual_income - 36525) * 13 / (91312 - 36525)))
 
     def house_cost(self, house_type, region_id):
-        key = "budget_house_cost" if house_type == 6 else "premium_house_cost"
-        base = self._setting("Economy & Jobs", key, 300 if house_type == 6 else 700)
+        house_prices = {
+            6: ("budget_house_cost", 300),
+            7: ("premium_house_cost", 700),
+        }
+        if house_type in (11, 12):
+            key = "apartment_rent_per_day" if house_type == 11 else "hotel_rent_per_day"
+            daily_rate = self._setting("Economy & Jobs", key, 200 if house_type == 11 else 100)
+            base = daily_rate * 4
+        else:
+            key, fallback = house_prices[house_type]
+            base = self._setting("Economy & Jobs", key, fallback)
         region = self.regions[region_id]
         return int(round(base * region["cost_multiplier"]
-                         * region.get("housing_price_factor", 1.0)))
+                         * region.get("housing_price_factor", 1.0)
+                         * region.get("home_quality", 1.0)))
 
-    def food_cost(self, region_id):
+    def collect_tax(self, region_id, gross):
+        """Take income tax from a wage and put it in the region's treasury."""
+        region = self.regions[region_id]
+        tax = int(round(gross * region.get("tax_rate", 0.0)))
+        region["tax_collected"] += tax
+        region["treasury"] += tax
+        return tax
+
+    def distribute_welfare(self, agents):
+        """Each region pays unemployed adults from its treasury until it runs out."""
+        share = self._setting("Economy & Jobs", "welfare_per_unemployed", 20)
+        min_age = self._setting("Migration", "min_age", 18)
+        for region in self.regions:
+            for agent in agents:
+                if agent.region != region["id"] or agent.age < min_age or agent.job is not None:
+                    continue
+                pay = min(share, region["treasury"])
+                if pay <= 0:
+                    break
+                region["treasury"] -= pay
+                agent.wealth += pay
+
+    def can_accept_resident(self, location, agent=None):
+        """Allow up to six household members, limited to the owner's family/partner."""
+        owner_id = self.house_owners.get(location)
+        residents = [
+            resident for resident in self.agent_lookup.values()
+            if resident.house == location
+        ]
+        if len(residents) >= 6:
+            return False
+        if owner_id is None or agent is None:
+            return True
+        return (agent.id == owner_id
+                or agent.dating_partner_id == owner_id
+                or owner_id in agent.parent_ids)
+
+    def food_cost(self, region_id, agent=None):
         base = self._setting("Grocery & Needs", "grocery_food_cost", grocery_food_cost)
-        return int(round(base * self.regions[region_id]["cost_multiplier"]))
+        days = getattr(self, "time_step_days", 1.0)
+        cost = base * days * self.regions[region_id]["cost_multiplier"]
+        if agent is not None and agent.job == "Grocery Store job":
+            cost *= 0.75
+        return int(round(cost))
 
     def update_housing_prices(self, agents):
         """More people per house than average -> higher housing prices in that region."""
