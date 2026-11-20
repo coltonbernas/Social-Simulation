@@ -1,6 +1,7 @@
 import csv
 import json
 import random
+import threading
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -8,9 +9,13 @@ from tkinter import filedialog, messagebox, ttk
 try:
     from .theme import *
     from .config_dialog import *
+    from .assistant import SimulationGuide
+    from .llm import ModelError
 except ImportError:
     from ui.theme import *
     from ui.config_dialog import *
+    from ui.assistant import SimulationGuide
+    from ui.llm import ModelError
 
 # Shared path to the configs directory
 CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
@@ -159,6 +164,7 @@ class SimulationWindow:
         ttk.Button(bar, text="End", command=self.end_simulation).pack(side="right")
         ttk.Button(bar, text="Export", command=self.export_agents).pack(side="right", padx=6)
         ttk.Button(bar, text="Reset", command=self.reset).pack(side="right")
+        ttk.Button(bar, text="Guide", command=self.show_guide).pack(side="right", padx=6)
 
         time_bar = ttk.Frame(self.root, padding=(10, 0, 10, 8))
         time_bar.pack(fill="x")
@@ -218,12 +224,16 @@ class SimulationWindow:
         overview = ttk.Frame(self.notebook, padding=10)
         agents = ttk.Frame(self.notebook, padding=10)
         log = ttk.Frame(self.notebook, padding=10)
-        for tab, name in ((overview, "Overview"), (agents, "Agents"), (log, "Event log")):
+        guide = ttk.Frame(self.notebook, padding=10)
+        for tab, name in ((overview, "Overview"), (agents, "Agents"),
+                          (log, "Event log"), (guide, "Guide")):
             tab.configure(style="TFrame")
             self.notebook.add(tab, text=name)
         self._build_overview(overview)
         self._build_agents(agents)
         self._build_log(log)
+        self._build_guide(guide)
+        self.guide = SimulationGuide(self)
  
     def _build_overview(self, tab):
         grid = tk.Frame(tab, bg=BG)
@@ -292,7 +302,139 @@ class SimulationWindow:
         self.log.pack(side="left", fill="both", expand=True)
         for category, color in LOG_COLORS.items():
             self.log.tag_configure(category, foreground=color)
- 
+
+    def _build_guide(self, tab):
+        header = ttk.Frame(tab)
+        header.pack(fill="x", pady=(0, 6))
+        ttk.Label(header, text="Simulation guide", font=(FONT, 12, "bold")).pack(side="left")
+        self.narrate_button = ttk.Button(header, text="Narrate: off", command=self.toggle_narration)
+        self.narrate_button.pack(side="right")
+
+        transcript = ttk.Frame(tab)
+        transcript.pack(fill="both", expand=True)
+        self.chat_log = tk.Text(
+            transcript, wrap="word", bg=PANEL, fg=TEXT, relief="flat",
+            font=(FONT, 10), padx=8, pady=6, state="disabled",
+        )
+        chat_scroll = ttk.Scrollbar(transcript, command=self.chat_log.yview)
+        self.chat_log.configure(yscrollcommand=chat_scroll.set)
+        chat_scroll.pack(side="right", fill="y")
+        self.chat_log.pack(side="left", fill="both", expand=True)
+        self.chat_log.tag_configure("user", foreground=ACCENT, spacing1=8, spacing3=2)
+        self.chat_log.tag_configure("guide", foreground=TEXT, spacing1=2, spacing3=6)
+        self.chat_log.tag_configure("meta", foreground=MUTED, spacing1=6, spacing3=4)
+        self.chat_log.tag_configure("who", font=(FONT, 8, "bold"))
+
+        prompts = ttk.Frame(tab)
+        prompts.pack(fill="x", pady=(8, 4))
+        for label, question in (
+            ("Status", "what's happening"),
+            ("Health", "why is health changing"),
+            ("Wealth", "how is wealth"),
+            ("Regions", "compare regions"),
+            ("Settings", "show settings"),
+        ):
+            ttk.Button(
+                prompts, text=label, command=lambda q=question: self.ask_guide(q),
+            ).pack(side="left", padx=(0, 4))
+
+        row = ttk.Frame(tab)
+        row.pack(fill="x", pady=(4, 0))
+        self.chat_entry = ttk.Entry(row)
+        self.chat_entry.pack(side="left", fill="x", expand=True)
+        self.chat_entry.bind("<Return>", lambda _event: self.ask_guide())
+        ttk.Button(row, text="Send", style="Accent.TButton", command=self.ask_guide).pack(
+            side="left", padx=(6, 0))
+        self.guide_tab = tab
+
+    def show_guide(self):
+        self.notebook.select(self.guide_tab)
+        self.chat_entry.focus_set()
+
+    def toggle_narration(self):
+        self.guide.narrating = not self.guide.narrating
+        self._sync_narrate_button()
+        state = "on" if self.guide.narrating else "off"
+        self._append_chat(
+            "Guide",
+            "Narration is {}. I'll comment when the run shifts.".format(state)
+            if self.guide.narrating else "Narration is off.",
+            "guide",
+        )
+
+    def _sync_narrate_button(self):
+        if hasattr(self, "narrate_button"):
+            self.narrate_button.configure(
+                text="Narrate: on" if self.guide.narrating else "Narrate: off")
+
+    def ask_guide(self, text=None):
+        if text is None:
+            text = self.chat_entry.get().strip()
+            self.chat_entry.delete(0, "end")
+        text = (text or "").strip()
+        if not text:
+            return
+        self.show_guide()
+        self._append_chat("You", text, "user")
+        self.guide.note_user(text)
+        command = self.guide.try_command(text)
+        if command is not None:
+            self._append_chat("Guide", command, "guide")
+            self._sync_narrate_button()
+            return
+        self._append_chat("Guide", "Asking the model…", "meta")
+        self.chat_entry.configure(state="disabled")
+
+        def work():
+            spoken, actions, error = None, [], None
+            try:
+                spoken, actions = self.guide.prepare_model(text)
+            except Exception as caught:
+                error = caught
+            self.root.after(0, lambda: self._finish_model_reply(text, spoken, actions, error))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _finish_model_reply(self, text, spoken, actions, error):
+        self.chat_entry.configure(state="normal")
+        self.chat_entry.focus_set()
+        if error is None:
+            reply = self.guide.finish_model_reply(text, spoken, actions)
+        else:
+            fallback = self.guide.respond(text)
+            if isinstance(error, ModelError):
+                reply = "{}\n\n{}".format(error, fallback)
+            else:
+                reply = "The free model failed ({}).\n\n{}".format(error, fallback)
+            self.guide._remember(text, reply)
+        self._replace_model_placeholder(reply)
+        self._sync_narrate_button()
+
+    def _replace_model_placeholder(self, reply):
+        self.chat_log.configure(state="normal")
+        start = self.chat_log.search("Asking the model…", "1.0")
+        if start:
+            self.chat_log.delete(start, "{} lineend".format(start))
+            self.chat_log.insert(start, reply.strip(), "guide")
+            self.chat_log.see("end")
+            self.chat_log.configure(state="disabled")
+            return
+        self.chat_log.configure(state="disabled")
+        self._append_chat("Guide", reply, "guide")
+
+    def _append_chat(self, speaker, message, tag):
+        if not hasattr(self, "chat_log"):
+            return
+        self.chat_log.configure(state="normal")
+        self.chat_log.insert("end", speaker + "\n", ("who", tag))
+        self.chat_log.insert("end", message.strip() + "\n", tag)
+        self.chat_log.see("end")
+        self.chat_log.configure(state="disabled")
+
+    def restart_from_guide(self):
+        """Rebuild the world from the config the guide has been editing."""
+        self.reset(active_config=self.current_config)
+
     def _build_status_bar(self):
         bar = tk.Frame(self.root, bg=PANEL, padx=10, pady=4)
         bar.pack(fill="x", side="bottom")
@@ -480,6 +622,11 @@ class SimulationWindow:
         self._record_history()
         self.refresh_panels()
         self.draw()
+        if hasattr(self, "guide"):
+            note = self.guide.on_reset()
+            if note:
+                self._append_chat("Guide", note, "guide")
+                self._sync_narrate_button()
  
     def end_simulation(self):
         self.stop()
@@ -587,6 +734,10 @@ class SimulationWindow:
         self._record_history()
         self.refresh_panels()
         self.draw()
+        if hasattr(self, "guide"):
+            note = self.guide.on_turn()
+            if note:
+                self._append_chat("Guide", note, "meta")
  
         if self.batch_remaining:
             self.batch_remaining -= 1
@@ -1120,7 +1271,7 @@ class SimulationWindow:
         canvas.create_line(*points, fill=ACCENT, width=3)
         canvas.create_text(width / 2, height - 24, text="Cumulative share of agents",
                            font=(FONT, 10), fill=MUTED)
-        canvas.create_text(18, height / 2, text="Cumulative wealth", angle=90,
+        canvas.create_text(left, top - 8, text="Cumulative wealth", anchor="sw",
                            font=(FONT, 10), fill=MUTED)
 
     def open_config_and_reset(self):
