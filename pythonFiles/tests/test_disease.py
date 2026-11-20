@@ -22,9 +22,23 @@ class DiseaseModelTests(unittest.TestCase):
                             for disease in DISEASES.values()))
         self.assertTrue(all(len(disease.pattern) <= IMMUNE_SYSTEM_LENGTH
                             for disease in DISEASES.values()))
+        ordered_by_contagiousness = sorted(
+            DISEASES.values(), key=lambda disease: disease.contagiousness,
+            reverse=True,
+        )
+        self.assertEqual(
+            [len(disease.pattern) for disease in ordered_by_contagiousness],
+            sorted(
+                (len(disease.pattern) for disease in DISEASES.values()),
+                reverse=True,
+            ),
+        )
 
         disease = DISEASES["common_cold"]
-        immune_system = "0" * 7 + disease.pattern + "0" * 38
+        immune_system = (
+            "0" * 7 + disease.pattern
+            + "0" * (IMMUNE_SYSTEM_LENGTH - 7 - len(disease.pattern))
+        )
         self.assertTrue(is_immune(immune_system, "common_cold"))
         self.assertEqual(find_best_match("0" * 50, "10101"), (0, (0, 2, 4)))
 
@@ -59,7 +73,10 @@ class DiseaseModelTests(unittest.TestCase):
         )
         immune = SimpleNamespace(
             id=3, pos_x=1, pos_y=0,
-            immune_system="0" * 7 + pattern + "0" * 38,
+            immune_system=(
+                "0" * 7 + pattern
+                + "0" * (IMMUNE_SYSTEM_LENGTH - 7 - len(pattern))
+            ),
             diseases=set(), pending_diseases=set(), health=100,
             hospitalized_at=None,
         )
@@ -153,7 +170,13 @@ class DiseaseModelTests(unittest.TestCase):
         self.assertFalse(introduce_disease(agent, "common_cold", world))
 
         immune_agent = SimpleNamespace(
-            id=6, immune_system="0" * 7 + DISEASES["common_cold"].pattern + "0" * 38,
+            id=6, immune_system=(
+                "0" * 7 + DISEASES["common_cold"].pattern
+                + "0" * (
+                    IMMUNE_SYSTEM_LENGTH - 7
+                    - len(DISEASES["common_cold"].pattern)
+                )
+            ),
             diseases=set(), pending_diseases=set(), health=100,
         )
         self.assertFalse(introduce_disease(immune_agent, "common_cold", world))

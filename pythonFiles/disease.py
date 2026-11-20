@@ -18,10 +18,10 @@ class Disease:
 
 
 DISEASES = {
-    "measles": Disease("Measles", "1101010010", 0.9),
-    "common_cold": Disease("Common cold", "10101", 0.5),
+    "measles": Disease("Measles", "11010100101101", 0.9),
+    "common_cold": Disease("Common cold", "1010110101", 0.5),
     "influenza": Disease("Influenza", "01101011", 0.4),
-    "covid_19": Disease("COVID-19", "1100101", 0.55),
+    "covid_19": Disease("COVID-19", "110010111001", 0.55),
     "pneumonic_plague": Disease("Pneumonic plague", "001110", 0.25),
 }
 DISEASE_ORDER = tuple(DISEASES)
