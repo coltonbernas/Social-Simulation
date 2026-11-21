@@ -128,7 +128,26 @@ class SimulationWindow:
                         foreground="#06101f", font=(FONT, 10, "bold"))
         style.map("Accent.TButton", background=[("active", "#7dd3fc")])
         style.configure("TEntry", fieldbackground=CARD, foreground=TEXT,
-                        insertcolor=TEXT, borderwidth=0)
+                        insertcolor=TEXT, borderwidth=1, padding=(6, 4),
+                        relief="solid")
+        style.configure("Time.TEntry", fieldbackground=CARD, foreground=TEXT,
+                        insertcolor=TEXT, borderwidth=1, padding=(6, 4),
+                        relief="solid")
+        style.configure(
+            "Time.TCombobox", fieldbackground=PANEL, background=CARD,
+            foreground=TEXT, arrowcolor=TEXT, borderwidth=1, padding=(8, 4),
+            relief="solid",
+        )
+        style.map(
+            "Time.TCombobox",
+            fieldbackground=[("readonly", PANEL), ("disabled", PANEL)],
+            foreground=[("readonly", TEXT), ("disabled", MUTED)],
+        )
+        self.root.option_add("*TCombobox*Listbox.background", PANEL)
+        self.root.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", BG)
+        self.root.option_add("*TCombobox*Listbox.font", (FONT, 10))
         style.configure(
             "Disease.TCombobox", fieldbackground=PANEL, background=CARD,
             foreground=TEXT, arrowcolor=TEXT, padding=6,
@@ -180,14 +199,17 @@ class SimulationWindow:
         ttk.Label(time_bar, text="Simulation duration (blank = as long as possible)",
                   style="Muted.TLabel").pack(
             side="left", padx=(0, 6))
-        ttk.Entry(time_bar, textvariable=self.duration_amount, width=6).pack(side="left")
+        ttk.Entry(time_bar, textvariable=self.duration_amount, width=6,
+                  style="Time.TEntry").pack(side="left")
         ttk.Combobox(time_bar, textvariable=self.duration_unit,
-                     values=tuple(TIME_INTERVALS), state="readonly", width=11).pack(
+                     values=tuple(TIME_INTERVALS), state="readonly", width=11,
+                     style="Time.TCombobox").pack(
                          side="left", padx=(4, 18))
         ttk.Label(time_bar, text="Step interval", style="Muted.TLabel").pack(
             side="left", padx=(0, 6))
         ttk.Combobox(time_bar, textvariable=self.step_unit,
-                     values=tuple(TIME_INTERVALS), state="readonly", width=11).pack(
+                     values=tuple(TIME_INTERVALS), state="readonly", width=11,
+                     style="Time.TCombobox").pack(
                          side="left")
  
     def _build_body(self):
@@ -1047,10 +1069,16 @@ class SimulationWindow:
         status = agent_status(agent) if agent in self.population.agents else "Deceased"
         self.agent_title.configure(text="{}  ·  {}".format(agent.name, status),
                                    fg=STATUS_COLORS.get(status, MUTED))
+        death_event = next(
+            (event for event in reversed(getattr(self.world, "death_events", []))
+             if event.get("agent_id") == agent.id),
+            None,
+        )
         fields = (
             ("Age", "{} (dies naturally at {})".format(agent.age, agent.death_age)),
             ("Gender", agent.gender.title()),
             ("Ethnicity", agent.ethnicity),
+            ("Cause of death", death_event["cause"] if death_event else "not deceased"),
             ("Health", "{}/100".format(agent.health)),
             ("Mental health", "{}/100".format(agent.mental_health)),
             ("Food", "{}/{}".format(agent.hunger, agent.hunger_max)),
