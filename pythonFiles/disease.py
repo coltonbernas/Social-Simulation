@@ -21,7 +21,7 @@ DISEASES = {
     "measles": Disease("Measles", "11010100101101", 0.9),
     "common_cold": Disease("Common cold", "1010110101", 0.5),
     "influenza": Disease("Influenza", "01101011", 0.4),
-    "covid_19": Disease("COVID-19", "110010111001", 0.55),
+    "covid_19": Disease("COVID-19", "110010111001", 5.5),
     "pneumonic_plague": Disease("Pneumonic plague", "001110", 0.25),
 }
 DISEASE_ORDER = tuple(DISEASES)
@@ -50,14 +50,16 @@ def validate_immune_system(immune_system):
 def find_best_match(immune_system, pattern):
     """Return the earliest substring with the fewest differing bits."""
     validate_immune_system(immune_system)
-    if not isinstance(pattern, str) or not 2 <= len(pattern) <= 14:
-        raise ValueError("Disease patterns must contain between 2 and 14 bits")
+    if not isinstance(pattern, str) or not 1 <= len(pattern) <= IMMUNE_SYSTEM_LENGTH:
+        raise ValueError("Disease patterns must contain between 1 and {} bits".format(IMMUNE_SYSTEM_LENGTH))
     if any(bit not in "01" for bit in pattern):
         raise ValueError("Disease patterns must contain only binary digits")
     if len(pattern) > len(immune_system):
         raise ValueError("Disease pattern cannot exceed the immune system length")
 
     best_start = 0
+    # The agent is only immune if any position matches exactly,
+    # otherwise take the position with the fewest differences.
     best_mismatches = tuple(range(len(pattern)))
     for start in range(len(immune_system) - len(pattern) + 1):
         mismatches = tuple(
@@ -201,40 +203,71 @@ def _spread_diseases(agents, world_obj, neighbors):
 
 def _repair_immune_systems(agents):
     for agent in sorted(agents, key=lambda item: item.id):
-        repair_budget = 2 if agent.hospitalized_at is not None else 1
-        while repair_budget and agent.diseases:
-            for candidate in DISEASE_ORDER:
-                if (candidate in agent.diseases
-                        and is_immune(agent.immune_system, candidate)):
-                    agent.diseases.remove(candidate)
-                    print("Agent {} recovered from {}.".format(
-                        agent.id, DISEASES[candidate].name
-                    ))
-            disease_id = next(
-                (candidate for candidate in DISEASE_ORDER
-                 if candidate in agent.diseases),
-                None,
-            )
+        # Hospital boost: repair one bit whenever an agent visits a hospital.
+        # This is on top of the regular repair.
+        repair_budget = 1
+        if agent.hospitalized_at is not None:
+            repair_budget += 1
+            
+        while repair_budget > 0 and (agent.diseases or agent.pending_diseases):
+            # Check all current diseases to see if any have been cured by repairs for others
+            recovered = [d for d in agent.diseases if is_immune(agent.immune_system, d)]
+            for d in recovered:
+                agent.diseases.remove(d)
+                print("Agent {} recovered from {}.".format(agent.id, DISEASES[d].name))
+            
+            # Also check pending diseases
+            recovered_pending = [d for d in agent.pending_diseases if is_immune(agent.immune_system, d)]
+            for d in recovered_pending:
+                agent.pending_diseases.remove(d)
+                print("Agent {}'s pending infection of {} was cleared by immunity.".format(agent.id, DISEASES[d].name))
+
+            if not agent.diseases and not agent.pending_diseases:
+                break
+            
+            # Pick a disease to work on (diseases first, then pending)
+            disease_id = next((d for d in DISEASE_ORDER if d in agent.diseases), None)
+            if disease_id is None:
+                disease_id = next((d for d in DISEASE_ORDER if d in agent.pending_diseases), None)
+            
             if disease_id is None:
                 break
+                
             disease = DISEASES[disease_id]
+            
             start, mismatches = find_best_match(agent.immune_system, disease.pattern)
             if not mismatches:
-                agent.diseases.remove(disease_id)
-                print("Agent {} recovered from {}.".format(agent.id, disease.name))
+                # Should have been caught by the check above
+                if disease_id in agent.diseases:
+                    agent.diseases.remove(disease_id)
+                elif disease_id in agent.pending_diseases:
+                    agent.pending_diseases.remove(disease_id)
                 continue
+            
+            # Repair one mismatching bit
             position = start + mismatches[0]
             corrected = list(agent.immune_system)
             corrected[position] = disease.pattern[mismatches[0]]
             agent.immune_system = "".join(corrected)
             repair_budget -= 1
-            print("Agent {} immune system repaired one bit for {} ({} mismatch(es) remain).".format(
-                agent.id, disease.name,
-                disease_progress(agent.immune_system, disease_id)[0]
-            ))
+            
+            # Check if cured this one
             if is_immune(agent.immune_system, disease_id):
-                agent.diseases.remove(disease_id)
-                print("Agent {} recovered from {}.".format(agent.id, disease.name))
+                if disease_id in agent.diseases:
+                    agent.diseases.remove(disease_id)
+                    print("Agent {} recovered from {}.".format(agent.id, disease.name))
+                elif disease_id in agent.pending_diseases:
+                    agent.pending_diseases.remove(disease_id)
+                    print("Agent {}'s pending infection of {} was cleared by immunity.".format(agent.id, disease.name))
+        
+        # Final check
+        recovered = [d for d in agent.diseases if is_immune(agent.immune_system, d)]
+        for d in recovered:
+            agent.diseases.remove(d)
+            print("Agent {} recovered from {}.".format(agent.id, DISEASES[d].name))
+        recovered_pending = [d for d in agent.pending_diseases if is_immune(agent.immune_system, d)]
+        for d in recovered_pending:
+            agent.pending_diseases.remove(d)
 
 
 def process_disease_turn(agents, world_obj):
