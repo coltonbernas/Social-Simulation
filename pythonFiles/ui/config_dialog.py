@@ -36,10 +36,56 @@ class ConfigDialog(tk.Toplevel):
 
         # Hide window while constructing UI to eliminate loading flicker/lag
         # self.withdraw()
+        self._setup_style()
         self._build_ui()
         # self.deiconify()
 
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+    def _setup_style(self):
+        style = ttk.Style(self)
+        style.theme_use("clam")
+        style.configure(".", background=BG, foreground=TEXT, font=(FONT, 10))
+        style.configure("TFrame", background=BG)
+        style.configure("Panel.TFrame", background=PANEL)
+        style.configure("TLabel", background=BG, foreground=TEXT)
+        style.configure("Muted.TLabel", background=BG, foreground=MUTED)
+        style.configure(
+            "TButton",
+            background=CARD,
+            foreground=TEXT,
+            borderwidth=0,
+            padding=(12, 6),
+            focusthickness=0,
+        )
+        style.map("TButton", background=[("active", BORDER)])
+        style.configure(
+            "Accent.TButton",
+            background=ACCENT,
+            foreground="#06101f",
+            font=(FONT, 10, "bold"),
+        )
+        style.map("Accent.TButton", background=[("active", "#7dd3fc")])
+        style.configure(
+            "Preset.TCombobox",
+            fieldbackground=PANEL,
+            background=CARD,
+            foreground=TEXT,
+            arrowcolor=TEXT,
+            borderwidth=1,
+            padding=(8, 4),
+            relief="solid",
+        )
+        style.map(
+            "Preset.TCombobox",
+            fieldbackground=[("readonly", PANEL), ("disabled", PANEL)],
+            foreground=[("readonly", TEXT), ("disabled", MUTED)],
+        )
+        self.option_add("*TCombobox*Listbox.background", PANEL)
+        self.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+        self.option_add("*TCombobox*Listbox.selectForeground", BG)
+        self.option_add("*TCombobox*Listbox.font", (FONT, 10))
 
     def _build_ui(self):
         # Header
@@ -159,7 +205,12 @@ class ConfigDialog(tk.Toplevel):
         manage_frame.pack(side="left")
 
         ttk.Label(manage_frame, text="Presets:", style="Muted.TLabel").pack(side="left", padx=(0, 5))
-        self.config_selector = ttk.Combobox(manage_frame, state="readonly", width=20)
+        self.config_selector = ttk.Combobox(
+            manage_frame,
+            state="readonly",
+            width=20,
+            style="Preset.TCombobox",
+        )
         self.config_selector.pack(side="left", padx=5)
         self._refresh_config_list()
 
