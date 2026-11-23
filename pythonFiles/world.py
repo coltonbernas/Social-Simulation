@@ -95,7 +95,8 @@ class World:
         self.money_transfer_events = []
         self.disease_events = []
         self.migration_events = []
-        from disease import DISEASES
+        from disease import DISEASES, refresh_diseases
+        refresh_diseases()
         self.vaccine_progress = {d_id: 0.0 for d_id in DISEASES}
         self.available_vaccines = set()
 
@@ -110,7 +111,6 @@ class World:
                     d_info.get("contagiousness", 0.5)
                 )
             # Re-initialize vaccine progress to include new diseases
-            from disease import DISEASES
             self.vaccine_progress = {d_id: 0.0 for d_id in DISEASES}
             # Ensure DISEASE_ORDER is stable
             global_disease_order = DISEASE_ORDER

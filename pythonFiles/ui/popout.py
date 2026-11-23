@@ -195,8 +195,9 @@ class SimulationWindow:
         self.config_button = ttk.Button(bar, text="Config", command=self.open_config_and_reset)
         # config_button is not packed initially
         
-        ttk.Button(bar, text="Reset", command=self.reset).pack(side="right", padx=6)
-        ttk.Button(bar, text="Guide", command=self.show_guide).pack(side="right")
+        self.reset_button = ttk.Button(bar, text="Reset", command=self.reset)
+        self.reset_button.pack(side="right", padx=(0, 6))
+        ttk.Button(bar, text="Guide", command=self.show_guide).pack(side="right", padx=(0, 6))
 
         time_bar = ttk.Frame(self.root, padding=(10, 0, 10, 8))
         time_bar.pack(fill="x")
@@ -498,7 +499,8 @@ class SimulationWindow:
         if was_running:
             self.stop()
 
-        from disease import DISEASES
+        from disease import DISEASES, refresh_diseases
+        refresh_diseases()
         disease_ids_by_name = {
             disease.name: disease_id for disease_id, disease in DISEASES.items()
         }
@@ -659,6 +661,8 @@ class SimulationWindow:
         # Reset visibility of config button if it was shown
         if hasattr(self, 'config_button'):
             self.config_button.pack_forget()
+            # Ensure toolbar stays clean
+            self.root.update_idletasks()
 
         self.population = Population(world_obj=self.world)
         self._apply_time_controls(show_error=False)
@@ -838,7 +842,8 @@ class SimulationWindow:
         
         # Make the config button available now that the simulation has ended
         if hasattr(self, 'config_button'):
-            self.config_button.pack(side="right")
+            # Insert before the Reset button (which is already at the right)
+            self.config_button.pack(side="right", padx=(0, 6), before=self.reset_button)
 
         self.refresh_panels()
         self.draw()

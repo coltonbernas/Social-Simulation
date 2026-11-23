@@ -40,6 +40,16 @@ def _load_all_diseases():
     return registry
 
 
+def refresh_diseases():
+    """Reload all diseases from disk and update the global registries."""
+    global DISEASES, DISEASE_ORDER
+    DISEASES.update(_load_all_diseases())
+    # Also remove any that were deleted? For now, just update/add.
+    new_order = sorted(list(DISEASES.keys()))
+    DISEASE_ORDER.clear()
+    DISEASE_ORDER.extend(new_order)
+
+
 DISEASES = _load_all_diseases()
 DISEASE_ORDER = sorted(list(DISEASES.keys()))
 
@@ -49,11 +59,7 @@ def register_custom_disease(name, pattern, contagiousness):
     d_id = name.lower().replace(" ", "_")
     
     disease = Disease(name, pattern, contagiousness)
-    DISEASES[d_id] = disease
-    if d_id not in DISEASE_ORDER:
-        DISEASE_ORDER.append(d_id)
-        DISEASE_ORDER.sort()
-
+    
     # Save to disk
     if not DISEASES_DIR.exists():
         DISEASES_DIR.mkdir(parents=True, exist_ok=True)
@@ -69,6 +75,9 @@ def register_custom_disease(name, pattern, contagiousness):
     except Exception as e:
         print(f"Failed to save custom disease to {path}: {e}")
         
+    # Refresh the global registry so all modules see the change
+    refresh_diseases()
+    
     return d_id
 
 
