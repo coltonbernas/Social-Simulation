@@ -95,6 +95,26 @@ class World:
         self.money_transfer_events = []
         self.disease_events = []
         self.migration_events = []
+        from disease import DISEASES
+        self.vaccine_progress = {d_id: 0.0 for d_id in DISEASES}
+        self.available_vaccines = set()
+
+        # 10. Register custom diseases from config
+        custom_diseases = config.get("Custom Diseases", {})
+        if isinstance(custom_diseases, dict) and custom_diseases:
+            from disease import register_custom_disease, DISEASE_ORDER
+            for d_id, d_info in custom_diseases.items():
+                register_custom_disease(
+                    d_info.get("name", d_id),
+                    d_info.get("pattern", ""),
+                    d_info.get("contagiousness", 0.5)
+                )
+            # Re-initialize vaccine progress to include new diseases
+            from disease import DISEASES
+            self.vaccine_progress = {d_id: 0.0 for d_id in DISEASES}
+            # Ensure DISEASE_ORDER is stable
+            global_disease_order = DISEASE_ORDER
+            global_disease_order.sort()
 
         self.build_regions(config.get("Regions", {}) if isinstance(config, dict) else {})
         self.place_buildings(requested_counts)

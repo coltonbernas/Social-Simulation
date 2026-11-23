@@ -1,3 +1,6 @@
+import json
+import os
+from pathlib import Path
 import random
 from dataclasses import dataclass
 
@@ -8,6 +11,7 @@ except ImportError:
 
 
 IMMUNE_SYSTEM_LENGTH = 50
+DISEASES_DIR = Path(__file__).resolve().parent / "diseases"
 
 
 @dataclass(frozen=True)
@@ -17,14 +21,55 @@ class Disease:
     contagiousness: float
 
 
-DISEASES = {
-    "measles": Disease("Measles", "11010100101101", 0.9),
-    "common_cold": Disease("Common cold", "1010110101", 0.5),
-    "influenza": Disease("Influenza", "01101011", 0.4),
-    "covid_19": Disease("COVID-19", "110010111001", 5.5),
-    "pneumonic_plague": Disease("Pneumonic plague", "001110", 0.25),
-}
-DISEASE_ORDER = tuple(DISEASES)
+def _load_all_diseases():
+    registry = {}
+    if not DISEASES_DIR.exists():
+        DISEASES_DIR.mkdir(parents=True, exist_ok=True)
+    for path in DISEASES_DIR.glob("*.json"):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                d_id = path.stem
+                registry[d_id] = Disease(
+                    name=data.get("name", d_id.replace("_", " ").title()),
+                    pattern=data.get("pattern", ""),
+                    contagiousness=data.get("contagiousness", 0.5)
+                )
+        except Exception as e:
+            print(f"Failed to load disease from {path}: {e}")
+    return registry
+
+
+DISEASES = _load_all_diseases()
+DISEASE_ORDER = sorted(list(DISEASES.keys()))
+
+
+def register_custom_disease(name, pattern, contagiousness):
+    """Register a new disease pattern at runtime and save to disk."""
+    d_id = name.lower().replace(" ", "_")
+    
+    disease = Disease(name, pattern, contagiousness)
+    DISEASES[d_id] = disease
+    if d_id not in DISEASE_ORDER:
+        DISEASE_ORDER.append(d_id)
+        DISEASE_ORDER.sort()
+
+    # Save to disk
+    if not DISEASES_DIR.exists():
+        DISEASES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    path = DISEASES_DIR / f"{d_id}.json"
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "name": name,
+                "pattern": pattern,
+                "contagiousness": contagiousness
+            }, f, indent=4)
+    except Exception as e:
+        print(f"Failed to save custom disease to {path}: {e}")
+        
+    return d_id
 
 
 def random_immune_system():
@@ -190,6 +235,10 @@ def _spread_diseases(agents, world_obj, neighbors):
                     target = agents_by_id[target_id]
                     if is_immune(target.immune_system, disease_id):
                         continue
+                    # Vaccine protection check
+                    expiry = target.vaccination_expiry.get(disease_id, 0)
+                    if expiry > world_obj.turnNo:
+                        continue
                     if random.random() < disease.contagiousness:
                         exposed.add(target_id)
                         target.pending_diseases.add(disease_id)
@@ -203,12 +252,28 @@ def _spread_diseases(agents, world_obj, neighbors):
 
 def _repair_immune_systems(agents):
     for agent in sorted(agents, key=lambda item: item.id):
-        # Hospital boost: repair one bit whenever an agent visits a hospital.
-        # This is on top of the regular repair.
+        disease_id = next((d for d in DISEASE_ORDER if d in agent.diseases), None)
+
+        if disease_id is None:
+            # Clear info for agents who aren't sick and don't have pending infections
+            if not agent.pending_diseases:
+                agent.disease_info.clear()
+            continue  # Agent isn't sick, skip to next agent
+
+        if disease_id not in agent.disease_info:
+            agent.disease_info[disease_id] = {"turns_active": 0, "is_vaccinated": False}
+        
+        info = agent.disease_info[disease_id]
+        info["turns_active"] += 1
+
+        if info["turns_active"] < 3:
+            continue
+        # Hospital boost: repair one bit every other turn
         repair_budget = 1
-        if agent.hospitalized_at is not None:
-            repair_budget += 1
-            
+        if info["turns_active"] % 2 == 0:
+            if agent.hospitalized_at is not None:
+                repair_budget += 1
+
         while repair_budget > 0 and (agent.diseases or agent.pending_diseases):
             # Check all current diseases to see if any have been cured by repairs for others
             recovered = [d for d in agent.diseases if is_immune(agent.immune_system, d)]
@@ -268,6 +333,7 @@ def _repair_immune_systems(agents):
         recovered_pending = [d for d in agent.pending_diseases if is_immune(agent.immune_system, d)]
         for d in recovered_pending:
             agent.pending_diseases.remove(d)
+
 
 
 def process_disease_turn(agents, world_obj):

@@ -52,6 +52,7 @@ disease_chance_per_turn = disease_config.get(
     config.get("disease_chance_per_turn", 0.5),
 )
 hunger_drain_per_step = config.get("hunger_drain_per_step", 5)
+hunger_damage_per_step = config.get("hunger_damage_per_step", 10)
 starting_wealth = config.get("starting_wealth", 0)
 _days_per_year = 365.25
 type_1_income_per_year = config.get(

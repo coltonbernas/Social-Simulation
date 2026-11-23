@@ -57,20 +57,11 @@ class ConfigDialog(tk.Toplevel):
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
 
-        tk.Checkbutton(
+        ttk.Button(
             header,
-            text="Start with predefined positions",
-            variable=self.predefined_start_var,
-            bg=BG,
-            fg=TEXT,
-            selectcolor=PANEL,
-            activebackground=BG,
-            activeforeground=TEXT,
-            highlightthickness=0,
-            relief="flat",
-            borderwidth=0,
-            font=(FONT, 9),
-        ).pack(anchor="w", pady=(8, 0))
+            text="Create New Disease",
+            command=self._open_disease_builder
+        ).pack(side="right", anchor="n", pady=5)
 
         # Scrollable container setup
         container = ttk.Frame(self)
@@ -319,6 +310,63 @@ class ConfigDialog(tk.Toplevel):
             "default": default_val,
         }
 
+    def _open_disease_builder(self):
+        builder = tk.Toplevel(self)
+        builder.title("Custom Disease Builder")
+        builder.geometry("400x300")
+        builder.configure(bg=BG)
+        builder.transient(self)
+        builder.grab_set()
+
+        frame = ttk.Frame(builder, padding=20)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="Disease Name:").grid(row=0, column=0, sticky="w", pady=5)
+        name_entry = ttk.Entry(frame)
+        name_entry.grid(row=0, column=1, sticky="ew", pady=5)
+
+        ttk.Label(frame, text="Pattern (0/1 up to 50):").grid(row=1, column=0, sticky="w", pady=5)
+        pattern_entry = ttk.Entry(frame)
+        pattern_entry.grid(row=1, column=1, sticky="ew", pady=5)
+
+        ttk.Label(frame, text="Contagiousness:").grid(row=2, column=0, sticky="w", pady=5)
+        contag_var = tk.DoubleVar(value=0.5)
+        contag_scale = tk.Scale(frame, from_=0.0, to=10.0, resolution=0.1, variable=contag_var, orient="horizontal", bg=BG, fg=TEXT, highlightthickness=0)
+        contag_scale.grid(row=2, column=1, sticky="ew", pady=5)
+
+        def save():
+            name = name_entry.get().strip()
+            pattern = pattern_entry.get().strip()
+            contag = contag_var.get()
+
+            if not name:
+                messagebox.showerror("Error", "Name is required.")
+                return
+            if not pattern or any(b not in "01" for b in pattern) or len(pattern) > 50:
+                messagebox.showerror("Error", "Pattern must be binary and <= 50 bits.")
+                return
+
+            try:
+                from disease import register_custom_disease, DISEASES_DIR
+            except ImportError:
+                from pythonFiles.disease import register_custom_disease, DISEASES_DIR
+            
+            d_id = register_custom_disease(name, pattern, contag)
+            
+            # Save to the current result configuration so it persists in the session
+            if "Custom Diseases" not in self.result:
+                self.result["Custom Diseases"] = {}
+            self.result["Custom Diseases"][d_id] = {
+                "name": name,
+                "pattern": pattern,
+                "contagiousness": contag
+            }
+            
+            messagebox.showinfo("Success", f"Disease '{name}' saved to {DISEASES_DIR}\\{d_id}.json and added to session!")
+            builder.destroy()
+
+        ttk.Button(frame, text="Create", command=save).grid(row=3, column=0, columnspan=2, pady=20)
+
     def _cleanup_bindings(self):
         self.unbind_all("<MouseWheel>")
         self.unbind_all("<Button-4>")
@@ -327,6 +375,16 @@ class ConfigDialog(tk.Toplevel):
     def _on_confirm(self):
         self._cleanup_bindings()
         self.result["start_with_predefined_positions"] = self.predefined_start_var.get()
+        
+        # Ensure Custom Diseases from original_config are preserved if not overwritten
+        if "Custom Diseases" in self.original_config and "Custom Diseases" not in self.result:
+            self.result["Custom Diseases"] = self.original_config["Custom Diseases"]
+        elif "Custom Diseases" in self.original_config and "Custom Diseases" in self.result:
+            # Merge them
+            for d_id, d_info in self.original_config["Custom Diseases"].items():
+                if d_id not in self.result["Custom Diseases"]:
+                    self.result["Custom Diseases"][d_id] = d_info
+
         for key_path, ctrl in self.controls.items():
             final_val = ctrl["value"].get() if ctrl["enabled"].get() else ctrl["default"]
             curr = self.result
@@ -371,6 +429,13 @@ class ConfigDialog(tk.Toplevel):
         if name:
             # Collect current values from UI
             current_data = json.loads(json.dumps(self.result))
+            
+            # Ensure Custom Diseases are included in the saved preset
+            if "Custom Diseases" in self.result:
+                current_data["Custom Diseases"] = self.result["Custom Diseases"]
+            elif "Custom Diseases" in self.original_config:
+                 current_data["Custom Diseases"] = self.original_config["Custom Diseases"]
+
             current_data["start_with_predefined_positions"] = self.predefined_start_var.get()
             for key_path, ctrl in self.controls.items():
                 val = ctrl["value"].get()
@@ -399,6 +464,13 @@ class ConfigDialog(tk.Toplevel):
             self.predefined_start_var.set(
                 bool(loaded_data.get("start_with_predefined_positions", False))
             )
+            
+            # Update custom diseases in result
+            if "Custom Diseases" in loaded_data:
+                self.result["Custom Diseases"] = loaded_data["Custom Diseases"]
+            else:
+                self.result.pop("Custom Diseases", None)
+
             for key_path, ctrl in self.controls.items():
                 curr = loaded_data
                 try:

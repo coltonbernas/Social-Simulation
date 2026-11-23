@@ -390,6 +390,31 @@ class Population:
             return None
         return giver, receiver, amount, reason
 
+    def _update_vaccine_research(self, world_obj):
+        """Advance vaccine research progress based on hospital workers' intelligence."""
+        hospital_workers = [
+            a for a in self.agents 
+            if a.job == "Hospital job" 
+            and a.hospitalized_at is None 
+            and not a.diseases
+        ]
+        if not hospital_workers:
+            return
+            
+        total_intel = sum(a.intelligence for a in hospital_workers)
+        # Scaling factor to determine research speed
+        scaling_factor = 0.0001 
+        
+        from disease import DISEASES
+        for d_id in world_obj.vaccine_progress:
+            if d_id not in world_obj.available_vaccines:
+                world_obj.vaccine_progress[d_id] += total_intel * scaling_factor
+                if world_obj.vaccine_progress[d_id] >= 1.0:
+                    world_obj.available_vaccines.add(d_id)
+                    print("VACCINE ALERT: A vaccine for {} has been researched and is now available!".format(
+                        DISEASES[d_id].name
+                    ))
+
     @staticmethod
     def _transfer_wealth(giver, receiver, amount, reason, turn, world_obj):
         """Record and print an affordable gift between two interacting agents."""
@@ -413,6 +438,7 @@ class Population:
         ))
 
     def step_agents(self, world_obj):
+        self._update_vaccine_research(world_obj)
         activate_pending_infections(self.agents)
 
         # Age advances by the selected calendar interval; survival remains tied

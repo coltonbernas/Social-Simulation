@@ -191,8 +191,12 @@ class SimulationWindow:
  
         ttk.Button(bar, text="End", command=self.end_simulation).pack(side="right")
         ttk.Button(bar, text="Export", command=self.export_agents).pack(side="right", padx=6)
-        ttk.Button(bar, text="Reset", command=self.reset).pack(side="right")
-        ttk.Button(bar, text="Guide", command=self.show_guide).pack(side="right", padx=6)
+        
+        self.config_button = ttk.Button(bar, text="Config", command=self.open_config_and_reset)
+        # config_button is not packed initially
+        
+        ttk.Button(bar, text="Reset", command=self.reset).pack(side="right", padx=6)
+        ttk.Button(bar, text="Guide", command=self.show_guide).pack(side="right")
 
         time_bar = ttk.Frame(self.root, padding=(10, 0, 10, 8))
         time_bar.pack(fill="x")
@@ -494,6 +498,7 @@ class SimulationWindow:
         if was_running:
             self.stop()
 
+        from disease import DISEASES
         disease_ids_by_name = {
             disease.name: disease_id for disease_id, disease in DISEASES.items()
         }
@@ -639,11 +644,21 @@ class SimulationWindow:
                 except Exception:
                     active_config = None
 
+        # Ensure custom diseases are registered before World initialization
+        if active_config and "Custom Diseases" in active_config:
+            from disease import register_custom_disease
+            for d_id, d_info in active_config["Custom Diseases"].items():
+                register_custom_disease(
+                    d_info.get("name", d_id),
+                    d_info.get("pattern", ""),
+                    d_info.get("contagiousness", 0.5)
+                )
+
         # Pass the config dictionary to World if supported by your constructor
-        if active_config:
-            self.world = World(config=active_config)
-        else:
-            self.world = World()
+        self.world = World(config=active_config)
+        # Reset visibility of config button if it was shown
+        if hasattr(self, 'config_button'):
+            self.config_button.pack_forget()
 
         self.population = Population(world_obj=self.world)
         self._apply_time_controls(show_error=False)
@@ -820,6 +835,11 @@ class SimulationWindow:
             "n/a" if gini is None else "{:.3f}".format(gini)), "money")
         self.view = "wealth"
         self.view_button.configure(text="Show map")
+        
+        # Make the config button available now that the simulation has ended
+        if hasattr(self, 'config_button'):
+            self.config_button.pack(side="right")
+
         self.refresh_panels()
         self.draw()
  
@@ -1279,6 +1299,14 @@ class SimulationWindow:
         if not self.population.agents:
             canvas.create_text(width / 2, 30, text="All agents have died.",
                                fill="#f87171", font=(FONT, 14, "bold"))
+            
+            # Add a button to the map too when all died
+            canvas.create_rectangle(width/2 - 70, height - 60, width/2 + 70, height - 20,
+                                   fill=ACCENT, outline="", tags="config_btn")
+            canvas.create_text(width/2, height - 40, text="Re-configure", fill=BG,
+                              font=(FONT, 12, "bold"), tags="config_btn")
+            canvas.tag_bind("config_btn", "<Button-1>", lambda e: self.open_config_and_reset())
+            canvas.configure(cursor="hand2")
  
     def _draw_wealth_chart(self):
         """Lorenz curve of final wealth (the further from the diagonal, the more unequal)."""
@@ -1317,6 +1345,15 @@ class SimulationWindow:
                            font=(FONT, 10), fill=MUTED)
         canvas.create_text(left, top - 8, text="Cumulative wealth", anchor="sw",
                            font=(FONT, 10), fill=MUTED)
+        
+        if self.final_reported:
+            # Create a clickable button area on the canvas or just a hint
+            canvas.create_rectangle(width/2 - 70, height/2 - 20, width/2 + 70, height/2 + 20,
+                                   fill=ACCENT, outline="", tags="config_btn")
+            canvas.create_text(width/2, height/2, text="Re-configure", fill=BG,
+                              font=(FONT, 12, "bold"), tags="config_btn")
+            canvas.tag_bind("config_btn", "<Button-1>", lambda e: self.open_config_and_reset())
+            canvas.configure(cursor="hand2")
 
     def open_config_and_reset(self):
         """Stops the run, displays parameter dialog, and resets simulation with chosen values."""
