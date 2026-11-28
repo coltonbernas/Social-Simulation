@@ -6,7 +6,7 @@ try:
     from .config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
     from .disease import (
         activate_pending_infections, combine_parent_immune_systems,
-        disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
+        disease_name, process_disease_turn, DISEASE_ORDER, DISEASES, is_immune,
     )
 except ImportError:
     try:
@@ -15,7 +15,7 @@ except ImportError:
         from pythonFiles.config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
         from pythonFiles.disease import (
             activate_pending_infections, combine_parent_immune_systems,
-            disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
+            disease_name, process_disease_turn, DISEASE_ORDER, DISEASES, is_immune,
         )
     except ImportError:
         from agent import Agent
@@ -23,7 +23,7 @@ except ImportError:
         from config import agent_count, building_names, grocery_food_cost, grocery_hunger_threshold
         from disease import (
             activate_pending_infections, combine_parent_immune_systems,
-            disease_name, process_disease_turn, DISEASE_ORDER, is_immune,
+            disease_name, process_disease_turn, DISEASE_ORDER, DISEASES, is_immune,
         )
 
 
@@ -405,7 +405,6 @@ class Population:
         # Scaling factor to determine research speed
         scaling_factor = 0.0001 
         
-        from disease import DISEASES
         for d_id in world_obj.vaccine_progress:
             if d_id not in world_obj.available_vaccines:
                 world_obj.vaccine_progress[d_id] += total_intel * scaling_factor

@@ -2,5 +2,6 @@
     "name": "Measles",
     "pattern": "11010100101101",
     "r0_estimate": 15.0,
-    "contagiousness": 0.93
+    "contagiousness": 0.93,
+    "health_damage_per_turn": 6
 }

@@ -103,6 +103,21 @@ class ConfigDialog(tk.Toplevel):
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
 
+        tk.Checkbutton(
+            header,
+            text="Start with predefined positions",
+            variable=self.predefined_start_var,
+            bg=BG,
+            fg=TEXT,
+            selectcolor=PANEL,
+            activebackground=BG,
+            activeforeground=TEXT,
+            highlightthickness=0,
+            relief="flat",
+            borderwidth=0,
+            font=(FONT, 9),
+        ).pack(anchor="w", pady=(8, 0))
+
         ttk.Button(
             header,
             text="Create New Disease",
@@ -364,7 +379,7 @@ class ConfigDialog(tk.Toplevel):
     def _open_disease_builder(self):
         builder = tk.Toplevel(self)
         builder.title("Custom Disease Builder")
-        builder.geometry("500x390")
+        builder.geometry("500x430")
         builder.configure(bg=BG)
         builder.transient(self)
         builder.grab_set()
@@ -455,9 +470,20 @@ class ConfigDialog(tk.Toplevel):
         update_probability()
         update_mode()
 
+        ttk.Label(frame, text="Health damage per turn:").grid(row=6, column=0, sticky="w", pady=5)
+        damage_var = tk.StringVar(value="2")
+        ttk.Entry(frame, textvariable=damage_var).grid(row=6, column=1, sticky="ew", pady=5)
+
         def save():
             name = name_entry.get().strip()
             pattern = pattern_entry.get().strip()
+            try:
+                health_damage = float(damage_var.get())
+                if not 0 <= health_damage < float("inf"):
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror("Error", "Health damage must be a number greater than or equal to 0.")
+                return
 
             if not name:
                 messagebox.showerror("Error", "Name is required.")
@@ -477,12 +503,17 @@ class ConfigDialog(tk.Toplevel):
             else:
                 contag = contag_var.get()
 
-            d_id = register_custom_disease(
-                name,
-                pattern,
-                contagiousness=contag if r0_estimate is None else None,
-                r0_estimate=r0_estimate,
-            )
+            try:
+                d_id = register_custom_disease(
+                    name,
+                    pattern,
+                    contagiousness=contag if r0_estimate is None else None,
+                    r0_estimate=r0_estimate,
+                    health_damage_per_turn=health_damage,
+                )
+            except (ValueError, OSError) as error:
+                messagebox.showerror("Error", str(error))
+                return
             
             # Save to the current result configuration so it persists in the session
             if "Custom Diseases" not in self.result:
@@ -490,7 +521,8 @@ class ConfigDialog(tk.Toplevel):
             disease_data = {
                 "name": name,
                 "pattern": pattern,
-                "contagiousness": contag
+                "contagiousness": contag,
+                "health_damage_per_turn": health_damage,
             }
             if r0_estimate is not None:
                 disease_data["r0_estimate"] = r0_estimate
@@ -499,7 +531,7 @@ class ConfigDialog(tk.Toplevel):
             messagebox.showinfo("Success", f"Disease '{name}' saved to {DISEASES_DIR}\\{d_id}.json and added to session!")
             builder.destroy()
 
-        ttk.Button(frame, text="Create", command=save).grid(row=6, column=0, columnspan=2, pady=20)
+        ttk.Button(frame, text="Create", command=save).grid(row=7, column=0, columnspan=2, pady=20)
 
     def _cleanup_bindings(self):
         self.unbind_all("<MouseWheel>")

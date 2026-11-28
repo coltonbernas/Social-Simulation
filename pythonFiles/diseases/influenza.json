@@ -2,5 +2,6 @@
     "name": "Influenza",
     "pattern": "01101011",
     "r0_estimate": 1.28,
-    "contagiousness": 0.22
+    "contagiousness": 0.22,
+    "health_damage_per_turn": 4
 }

@@ -27,7 +27,8 @@ try:  # Support ``python -m pythonFiles.main`` and repo-root imports.
     from pythonFiles.config import building_names
     from pythonFiles.disease import (
         DISEASES, disease_name, disease_pattern, disease_progress,
-        introduce_disease, is_immune,
+        introduce_disease, is_immune, refresh_diseases,
+        contagiousness_from_r0, register_custom_disease,
     )
 except ImportError:
     try:  # Support ``python main.py`` from the pythonFiles directory.
@@ -36,7 +37,8 @@ except ImportError:
         from config import building_names
         from disease import (
             DISEASES, disease_name, disease_pattern, disease_progress,
-            introduce_disease, is_immune,
+            introduce_disease, is_immune, refresh_diseases,
+            contagiousness_from_r0, register_custom_disease,
         )
     except ImportError:  # Direct package-relative fallback for some older layouts.
         from ..world import World
@@ -44,7 +46,8 @@ except ImportError:
         from ..config import building_names
         from ..disease import (
             DISEASES, disease_name, disease_pattern, disease_progress,
-            introduce_disease, is_immune,
+            introduce_disease, is_immune, refresh_diseases,
+            contagiousness_from_r0, register_custom_disease,
         )
 
 TIME_INTERVALS = {
@@ -179,6 +182,8 @@ class SimulationWindow:
         ttk.Button(bar, text="Step", command=self.step_once).pack(side="left")
         ttk.Button(bar, text="Introduce disease",
                    command=self.open_disease_dialog).pack(side="left", padx=6)
+        ttk.Button(bar, text="Create disease",
+                   command=self.open_custom_disease_dialog).pack(side="left", padx=6)
  
         ttk.Label(bar, text="Batch", style="Muted.TLabel").pack(side="left", padx=(14, 4))
         self.batch_size = tk.StringVar(value="10")
@@ -481,6 +486,128 @@ class SimulationWindow:
         self.turn_label.pack(side="right")
  
     # ------------------------------------------------- 3. simulation control
+    def open_custom_disease_dialog(self):
+        if self.running:
+            messagebox.showinfo(
+                "Create disease", "Pause the simulation before creating a disease."
+            )
+            return
+        if self.world is None or self.population is None:
+            messagebox.showinfo("Create disease", "Start a simulation first.")
+            return
+        if self._finished():
+            messagebox.showinfo(
+                "Create disease", "The simulation has ended. Reset it before creating a disease."
+            )
+            return
+
+        refresh_diseases()
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Create disease")
+        dialog.transient(self.root)
+        dialog.configure(bg=BG)
+        dialog.resizable(False, False)
+
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+        ttk.Label(frame, text="Disease name").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+        name_entry = ttk.Entry(frame, width=32)
+        name_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        ttk.Label(frame, text="Immune pattern (1–50 binary digits)").grid(
+            row=1, column=0, sticky="w", padx=(0, 10), pady=5
+        )
+        pattern_entry = ttk.Entry(frame, width=32)
+        pattern_entry.grid(row=1, column=1, sticky="ew", pady=5)
+        ttk.Label(frame, text="Transmission setting").grid(
+            row=2, column=0, sticky="w", padx=(0, 10), pady=5
+        )
+        mode = tk.StringVar(value="probability")
+        mode_frame = ttk.Frame(frame)
+        mode_frame.grid(row=2, column=1, sticky="w", pady=5)
+        ttk.Radiobutton(mode_frame, text="Per-contact probability", variable=mode,
+                        value="probability").pack(side="left")
+        ttk.Radiobutton(mode_frame, text="R0", variable=mode, value="r0").pack(side="left", padx=8)
+        contag = tk.DoubleVar(value=0.5)
+        r0 = tk.StringVar(value="2.0")
+        damage = tk.StringVar(value="2")
+        probability_label = ttk.Label(frame, text="Probability (0–1)")
+        probability_label.grid(row=3, column=0, sticky="w", padx=(0, 10), pady=5)
+        contag_scale = tk.Scale(frame, from_=0, to=1, resolution=0.01,
+                                variable=contag, orient="horizontal", bg=BG,
+                                fg=TEXT, highlightthickness=0)
+        contag_scale.grid(row=3, column=1, sticky="ew", pady=5)
+        r0_label = ttk.Label(frame, text="R0 (>= 1)")
+        r0_entry = ttk.Entry(frame, textvariable=r0)
+
+        def set_transmission_mode(*_):
+            if mode.get() == "r0":
+                contag_scale.grid_remove()
+                probability_label.grid_remove()
+                r0_label.grid(row=3, column=0, sticky="w", padx=(0, 10), pady=5)
+                r0_entry.grid(row=3, column=1, sticky="ew", pady=5)
+            else:
+                r0_label.grid_remove()
+                r0_entry.grid_remove()
+                probability_label.grid(row=3, column=0, sticky="w", padx=(0, 10), pady=5)
+                contag_scale.grid(row=3, column=1, sticky="ew", pady=5)
+
+        for radio in mode_frame.winfo_children():
+            radio.configure(command=set_transmission_mode)
+
+        ttk.Label(frame, text="Health damage per turn").grid(
+            row=4, column=0, sticky="w", padx=(0, 10), pady=5
+        )
+        damage_entry = ttk.Entry(frame, textvariable=damage)
+        damage_entry.grid(row=4, column=1, sticky="ew", pady=5)
+
+        def save():
+            name = name_entry.get().strip()
+            pattern = pattern_entry.get().strip()
+            if not name:
+                messagebox.showerror("Invalid disease", "Enter a disease name.", parent=dialog)
+                return
+            if not 1 <= len(pattern) <= 50 or any(bit not in "01" for bit in pattern):
+                messagebox.showerror(
+                    "Invalid disease", "The pattern must contain 1–50 binary digits.", parent=dialog
+                )
+                return
+            try:
+                damage_value = float(damage.get())
+                if damage_value < 0:
+                    raise ValueError("Health damage must be zero or greater")
+                if mode.get() == "r0":
+                    r0_value = float(r0.get())
+                    disease_id = register_custom_disease(
+                        name, pattern, r0_estimate=r0_value,
+                        health_damage_per_turn=damage_value,
+                    )
+                else:
+                    contag_value = contag.get()
+                    disease_id = register_custom_disease(
+                        name, pattern, contagiousness=contag_value,
+                        health_damage_per_turn=damage_value,
+                    )
+            except (ValueError, OSError) as error:
+                messagebox.showerror("Invalid disease", str(error), parent=dialog)
+                return
+            self.world.vaccine_progress[disease_id] = 0.0
+            self.world.available_vaccines.discard(disease_id)
+            self._log(
+                "Custom disease '{}' created while the simulation was paused.".format(name),
+                "health",
+            )
+            dialog.destroy()
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=5, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="Create", command=save).pack(side="right", padx=(0, 6))
+        set_transmission_mode()
+        dialog.grab_set()
+        dialog.focus_set()
+        self.root.wait_window(dialog)
+
     def open_disease_dialog(self):
         if self.world is None or self.population is None:
             messagebox.showinfo("Introduce disease", "Start a simulation first.")
@@ -499,7 +626,6 @@ class SimulationWindow:
         if was_running:
             self.stop()
 
-        from disease import DISEASES, refresh_diseases
         refresh_diseases()
         disease_ids_by_name = {
             disease.name: disease_id for disease_id, disease in DISEASES.items()
@@ -648,7 +774,6 @@ class SimulationWindow:
 
         # Ensure custom diseases are registered before World initialization
         if active_config and "Custom Diseases" in active_config:
-            from disease import register_custom_disease
             for d_id, d_info in active_config["Custom Diseases"].items():
                 register_custom_disease(
                     d_info.get("name", d_id),
@@ -658,6 +783,7 @@ class SimulationWindow:
                         else d_info.get("contagiousness", 0.5)
                     ),
                     r0_estimate=d_info.get("r0_estimate"),
+                    health_damage_per_turn=d_info.get("health_damage_per_turn", 1.0),
                 )
 
         # Pass the config dictionary to World if supported by your constructor

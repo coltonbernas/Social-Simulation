@@ -2,5 +2,6 @@
     "name": "COVID-19",
     "pattern": "110010111001",
     "r0_estimate": 2.2,
-    "contagiousness": 0.55
+    "contagiousness": 0.55,
+    "health_damage_per_turn": 4
 }

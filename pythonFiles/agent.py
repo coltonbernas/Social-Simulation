@@ -25,12 +25,12 @@ except ImportError:
 
 try:
     from .disease import (
-        disease_hunger_cost, random_immune_system, disease_name,
+        disease_health_damage, random_immune_system, disease_name,
         validate_immune_system,
     )
 except ImportError:
     from disease import (
-        disease_hunger_cost, random_immune_system, disease_name,
+        disease_health_damage, random_immune_system, disease_name,
         validate_immune_system,
     )
 
@@ -327,19 +327,25 @@ class Agent:
     def update_health(self, world_obj=None):
         """Apply hunger, starvation, health recovery, and stressful-event effects."""
         hunger_drain = self._get_cfg_val(world_obj, "Grocery & Needs", "hunger_drain_per_step", hunger_drain_per_step)
-        self.hunger = max(
-            0, self.hunger - hunger_drain - disease_hunger_cost(self)
-        )
+        self.hunger = max(0, self.hunger - hunger_drain)
 
-        h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
-        previous_health = self.health
-        self.health = min(h_max, self.health + 1)
-        if self.health > previous_health:
-            self.last_health_damage_cause = None
+        illness_damage = disease_health_damage(self, world_obj)
+        if illness_damage:
+            self.damage_health(illness_damage, "disease", world_obj)
 
+        taking_damage = illness_damage > 0
         if self.hunger <= 0:
             damage = self._get_cfg_val(world_obj, "Grocery & Needs", "hunger_damage_per_step", hunger_damage_per_step)
-            self.damage_health(damage, "hunger", world_obj)
+            if damage > 0:
+                self.damage_health(damage, "hunger", world_obj)
+                taking_damage = True
+
+        if not taking_damage:
+            h_max = self._get_cfg_val(world_obj, "Agent & Population", "health_max", health_max)
+            previous_health = self.health
+            self.health = min(h_max, self.health + 1)
+            if self.health > previous_health:
+                self.last_health_damage_cause = None
 
         self.update_stressful_events(world_obj)
 
@@ -654,7 +660,8 @@ class Agent:
         hospital_target = None
         if self.diseases:
             hospital_target = min(
-                world_obj.hospitals,
+                (location for location in world_obj.hospitals
+                 if world_obj.hospital_has_patient_capacity(location)),
                 key=lambda location: (
                     abs(location[0] - self.pos_x) + abs(location[1] - self.pos_y),
                     location,
@@ -908,36 +915,39 @@ class Agent:
             ))
             if building_type in world_obj.building_jobs:
                 self.apply_for_job(world_obj, building_type, building_location)
+                if building_type == 5:
+                    self.try_vaccinate(world_obj)
             elif building_type == 3 and school_target == building_location:
                 self.start_school(world_obj, building_location)
             elif building_type == 4:
                 self.buy_food(world_obj, building_location)
-            elif building_type == 5:
-                if self.diseases:
-                    self.hospitalized_at = building_location
-                    self.hospital_stay_turns = 0
-                    self.hospital_visit_event = {
-                        "admitted_turn": world_obj.turnNo + 1,
-                        "agent_id": self.id,
-                        "position": building_location,
-                        "diseases": sorted(self.diseases),
-                        "cured_turn": None,
-                        "turns_in_hospital": None,
-                        "outcome": "in treatment",
-                    }
-                    world_obj.hospital_events.append(self.hospital_visit_event)
-                    if self.job == "Type 2 job":
-                        self.returning_to_job = True
-                    print("Agent {} entered the hospital with {}; immune repair is accelerated.".format(
-                        self.id, ", ".join(
-                            disease_name(disease) for disease in sorted(self.diseases)
-                        )
-                    ))
-                self.try_vaccinate(world_obj)
             elif building_type in (6, 7, 11, 12):
                 if self.house == building_location:
                     return None
                 self.buy_house(world_obj, building_location)
+
+        if (building_type == 5 and self.diseases
+                and self.hospitalized_at is None
+                and world_obj.hospital_has_patient_capacity(building_location)):
+            self.hospitalized_at = building_location
+            self.hospital_stay_turns = 0
+            self.hospital_visit_event = {
+                "admitted_turn": world_obj.turnNo + 1,
+                "agent_id": self.id,
+                "position": building_location,
+                "diseases": sorted(self.diseases),
+                "cured_turn": None,
+                "turns_in_hospital": None,
+                "outcome": "in treatment",
+            }
+            world_obj.hospital_events.append(self.hospital_visit_event)
+            if self.job == "Type 2 job":
+                self.returning_to_job = True
+            print("Agent {} entered the hospital with {}; immune repair is accelerated.".format(
+                self.id, ", ".join(
+                    disease_name(disease) for disease in sorted(self.diseases)
+                )
+            ))
 
     def start_school(self, world_obj, location):
         """Enroll the agent at a school; multiple agents may share its tile."""
@@ -966,7 +976,6 @@ class Agent:
         if self.distrust > 0.5:
             return
 
-        from disease import disease_name
         for d_id in world_obj.available_vaccines:
             # Don't vaccinate if already immune or recently vaccinated
             if d_id in self.diseases or d_id in self.pending_diseases:

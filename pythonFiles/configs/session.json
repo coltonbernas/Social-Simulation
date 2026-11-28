@@ -23,7 +23,10 @@
         "base_disease_transmission": 1.0,
         "disease_health_impact": 1,
         "disease_chance_per_turn": 0.0,
-        "hospital_stay_duration_turns": 3
+        "hospital_stay_duration_turns": 3,
+        "hospital_base_patient_capacity": 6,
+        "hospital_patients_per_doctor": 2,
+        "hospital_max_doctors_for_capacity": 2
     },
     "Economy & Jobs": {
         "type_1_income_per_turn": 100,

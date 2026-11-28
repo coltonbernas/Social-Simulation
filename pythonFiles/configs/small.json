@@ -25,7 +25,10 @@
         "health_max": 100
     },
     "Health & Disease": {
-        "community_case_chance_per_turn": 0.01
+        "community_case_chance_per_turn": 0.01,
+        "hospital_base_patient_capacity": 6,
+        "hospital_patients_per_doctor": 2,
+        "hospital_max_doctors_for_capacity": 2
     },
     "Economy & Jobs": {
         "type_1_income_per_year": 36525,

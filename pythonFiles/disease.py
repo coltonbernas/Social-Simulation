@@ -3,6 +3,7 @@ import math
 import os
 from pathlib import Path
 import random
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -32,6 +33,7 @@ class Disease:
     pattern: str
     contagiousness: float
     r0_estimate: Optional[float] = None
+    health_damage_per_turn: float = 1.0
 
     def __post_init__(self):
         if (isinstance(self.contagiousness, bool)
@@ -41,6 +43,11 @@ class Disease:
             raise ValueError("Contagiousness must be a number between 0 and 1")
         if self.r0_estimate is not None:
             contagiousness_from_r0(self.r0_estimate)
+        if (isinstance(self.health_damage_per_turn, bool)
+                or not isinstance(self.health_damage_per_turn, (int, float))
+                or not math.isfinite(self.health_damage_per_turn)
+                or self.health_damage_per_turn < 0):
+            raise ValueError("Disease health damage must be a finite non-negative number")
 
 
 def _load_all_diseases():
@@ -57,6 +64,7 @@ def _load_all_diseases():
                     pattern=data.get("pattern", ""),
                     contagiousness=data.get("contagiousness", 0.5),
                     r0_estimate=data.get("r0_estimate"),
+                    health_damage_per_turn=data.get("health_damage_per_turn", 1.0),
                 )
         except Exception as e:
             print(f"Failed to load disease from {path}: {e}")
@@ -77,9 +85,17 @@ DISEASES = _load_all_diseases()
 DISEASE_ORDER = sorted(list(DISEASES.keys()))
 
 
-def register_custom_disease(name, pattern, contagiousness=None, r0_estimate=None):
+def register_custom_disease(name, pattern, contagiousness=None, r0_estimate=None,
+                            health_damage_per_turn=1.0):
     """Register a new disease pattern at runtime and save to disk."""
-    d_id = name.lower().replace(" ", "_")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Disease name is required")
+    d_id = re.sub(r"[^a-z0-9_]+", "_", name.strip().lower()).strip("_")
+    if not d_id:
+        raise ValueError("Disease name must contain letters or numbers")
+    if (not isinstance(pattern, str) or not 1 <= len(pattern) <= IMMUNE_SYSTEM_LENGTH
+            or any(bit not in "01" for bit in pattern)):
+        raise ValueError("Disease patterns must contain 1 to 50 binary digits")
 
     if r0_estimate is not None:
         if contagiousness is not None:
@@ -88,25 +104,35 @@ def register_custom_disease(name, pattern, contagiousness=None, r0_estimate=None
     elif contagiousness is None:
         raise ValueError("Provide either contagiousness or R0")
 
-    disease = Disease(name, pattern, contagiousness, r0_estimate)
+    disease = Disease(name, pattern, contagiousness, r0_estimate,
+                      health_damage_per_turn)
+
+    existing = DISEASES.get(d_id)
+    if existing is not None:
+        if existing == disease:
+            return d_id
+        if (existing.name != disease.name
+                or existing.pattern != disease.pattern
+                or existing.contagiousness != disease.contagiousness
+                or existing.r0_estimate != disease.r0_estimate):
+            raise ValueError("A disease with this name already exists")
+        # A config may update damage for an existing custom disease.
     
     # Save to disk
     if not DISEASES_DIR.exists():
         DISEASES_DIR.mkdir(parents=True, exist_ok=True)
     
     path = DISEASES_DIR / f"{d_id}.json"
-    try:
-        data = {
-            "name": name,
-            "pattern": pattern,
-            "contagiousness": contagiousness,
-        }
-        if r0_estimate is not None:
-            data["r0_estimate"] = r0_estimate
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"Failed to save custom disease to {path}: {e}")
+    data = {
+        "name": name,
+        "pattern": pattern,
+        "contagiousness": contagiousness,
+        "health_damage_per_turn": health_damage_per_turn,
+    }
+    if r0_estimate is not None:
+        data["r0_estimate"] = r0_estimate
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
         
     # Refresh the global registry so all modules see the change
     refresh_diseases()
@@ -292,7 +318,7 @@ def _spread_diseases(agents, world_obj, neighbors):
             wave = next_wave
 
 
-def _repair_immune_systems(agents):
+def _repair_immune_systems(agents, days_elapsed=1.0):
     for agent in sorted(agents, key=lambda item: item.id):
         disease_id = next((d for d in DISEASE_ORDER if d in agent.diseases), None)
 
@@ -302,21 +328,28 @@ def _repair_immune_systems(agents):
                 agent.disease_info.clear()
             continue  # Agent isn't sick, skip to next agent
 
+        if not hasattr(agent, "disease_info"):
+            agent.disease_info = {}
         if disease_id not in agent.disease_info:
-            agent.disease_info[disease_id] = {"turns_active": 0, "is_vaccinated": False}
-        
+            agent.disease_info[disease_id] = {
+                "active_days": 0.0,
+                "repair_progress": 0.0,
+                "is_vaccinated": False,
+            }
+
         info = agent.disease_info[disease_id]
-        info["turns_active"] += 1
+        previous_active_days = info.get("active_days", 0.0)
+        active_days = previous_active_days + max(0.0, days_elapsed)
+        info["active_days"] = active_days
+        # The first two days are an incubation/response delay. After that,
+        # ordinary repair accrues at half a bit per day; hospital care doubles it.
+        eligible_days = max(0.0, active_days - 2.0) - max(
+            0.0, previous_active_days - 2.0
+        )
+        repair_rate = 1.0 if agent.hospitalized_at is not None else 0.5
+        repair_budget = info.get("repair_progress", 0.0) + eligible_days * repair_rate
 
-        if info["turns_active"] < 3:
-            continue
-        # Hospital boost: repair one bit every other turn
-        repair_budget = 1
-        if info["turns_active"] % 2 == 0:
-            if agent.hospitalized_at is not None:
-                repair_budget += 1
-
-        while repair_budget > 0 and (agent.diseases or agent.pending_diseases):
+        while repair_budget >= 1.0 and (agent.diseases or agent.pending_diseases):
             # Check all current diseases to see if any have been cured by repairs for others
             recovered = [d for d in agent.diseases if is_immune(agent.immune_system, d)]
             for d in recovered:
@@ -367,6 +400,8 @@ def _repair_immune_systems(agents):
                     agent.pending_diseases.remove(disease_id)
                     print("Agent {}'s pending infection of {} was cleared by immunity.".format(agent.id, disease.name))
         
+        info["repair_progress"] = repair_budget
+
         # Final check
         recovered = [d for d in agent.diseases if is_immune(agent.immune_system, d)]
         for d in recovered:
@@ -384,13 +419,31 @@ def process_disease_turn(agents, world_obj):
     neighbors = _contact_neighbors(ordered)
     _spread_diseases(ordered, world_obj, neighbors)
     _introduce_community_cases(ordered, world_obj)
-    _repair_immune_systems(ordered)
+    days_elapsed = getattr(world_obj, "time_step_days", 1.0) if world_obj is not None else 1.0
+    _repair_immune_systems(ordered, days_elapsed)
+
+
+def disease_health_damage(agent, world_obj=None):
+    """Return direct health damage from active diseases for this turn."""
+    config = getattr(world_obj, "config", {}) if world_obj is not None else {}
+    disease_config = config.get("Health & Disease", {}) if isinstance(config, dict) else {}
+    configured_damage = disease_config.get("disease_health_damage_per_turn", {})
+    damage = 0.0
+    for disease_id in agent.diseases:
+        disease = DISEASES.get(disease_id)
+        if disease is None:
+            continue
+        amount = (configured_damage.get(disease_id, disease.health_damage_per_turn)
+                  if isinstance(configured_damage, dict) else configured_damage)
+        if (isinstance(amount, bool) or not isinstance(amount, (int, float))
+                or not math.isfinite(amount) or amount < 0):
+            raise ValueError(
+                "Health & Disease disease_health_damage_per_turn values must be non-negative numbers"
+            )
+        damage += amount
+    return damage
 
 
 def disease_hunger_cost(agent):
-    """Extra hunger drained per turn, scaled by the lengths of active patterns."""
-    return sum(
-        len(DISEASES[disease_id].pattern)
-        for disease_id in agent.diseases
-        if disease_id in DISEASES
-    )
+    """Disease no longer adds to hunger drain; retained for compatibility."""
+    return 0

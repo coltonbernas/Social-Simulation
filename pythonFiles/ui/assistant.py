@@ -258,7 +258,7 @@ MECHANICS = (
     "Community case chance can expose a healthy agent at random. "
     "Each turn repairs one mismatched immune bit, or two while the agent is in hospital. "
     "The agent leaves hospital when no infection or pending exposure remains. "
-    "Active diseases also drain extra hunger equal to their pattern length. "
+    "Each active disease directly damages health by its configured amount per turn; disease does not add to hunger drain. "
     "The disease controls can expose one living agent who is not immune. "
     "Jobs are type 1 through 5, grocery stores, and hospitals. Pay is an annual salary "
     "scaled by the length of the turn and the region wage, then reduced by that region's income tax. "
@@ -1150,7 +1150,7 @@ class SimulationGuide:
             "The diseases are {}. Each agent has an immune system that children inherit. "
             "Exposure starts the illness next turn. One immune bit is repaired each turn, or two in hospital, "
             "and the agent stays until every infection is gone. "
-            "Hunger drops by {} each turn, plus the length of each active disease, and food restores {} health. "
+            "Hunger drops by {} each turn. Active diseases directly reduce health by their configured damage, and food restores {} health. "
             "Community cases appear with chance {}.".format(
                 known,
                 _fmt(self._get(("Grocery & Needs", "hunger_drain_per_step"))),

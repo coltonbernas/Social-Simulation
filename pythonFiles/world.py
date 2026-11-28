@@ -95,7 +95,13 @@ class World:
         self.money_transfer_events = []
         self.disease_events = []
         self.migration_events = []
-        from disease import DISEASES, refresh_diseases
+        try:
+            from .disease import DISEASES, refresh_diseases
+        except ImportError:
+            try:
+                from pythonFiles.disease import DISEASES, refresh_diseases
+            except ImportError:
+                from disease import DISEASES, refresh_diseases
         refresh_diseases()
         self.vaccine_progress = {d_id: 0.0 for d_id in DISEASES}
         self.available_vaccines = set()
@@ -103,7 +109,13 @@ class World:
         # 10. Register custom diseases from config
         custom_diseases = config.get("Custom Diseases", {})
         if isinstance(custom_diseases, dict) and custom_diseases:
-            from disease import register_custom_disease, DISEASE_ORDER
+            try:
+                from .disease import register_custom_disease, DISEASE_ORDER
+            except ImportError:
+                try:
+                    from pythonFiles.disease import register_custom_disease, DISEASE_ORDER
+                except ImportError:
+                    from disease import register_custom_disease, DISEASE_ORDER
             for d_id, d_info in custom_diseases.items():
                 register_custom_disease(
                     d_info.get("name", d_id),
@@ -113,6 +125,7 @@ class World:
                         else d_info.get("contagiousness", 0.5)
                     ),
                     r0_estimate=d_info.get("r0_estimate"),
+                    health_damage_per_turn=d_info.get("health_damage_per_turn", 1.0),
                 )
             # Re-initialize vaccine progress to include new diseases
             self.vaccine_progress = {d_id: 0.0 for d_id in DISEASES}
@@ -143,6 +156,34 @@ class World:
             )
             for location, holders in self.building_jobs.items()
         )
+
+    def hospital_patient_capacity(self, location):
+        """Return configured beds from the base and employed doctors at a hospital."""
+        base_capacity = max(0, int(self._setting(
+            "Health & Disease", "hospital_base_patient_capacity", 6
+        )))
+        beds_per_doctor = max(0, int(self._setting(
+            "Health & Disease", "hospital_patients_per_doctor", 2
+        )))
+        doctor_limit = max(0, int(self._setting(
+            "Health & Disease", "hospital_max_doctors_for_capacity", 2
+        )))
+        doctor_count = min(
+            doctor_limit, len(self.building_jobs.get(location, ()))
+        )
+        return base_capacity + beds_per_doctor * doctor_count
+
+    def hospital_patient_count(self, location):
+        """Count living agents currently admitted at a hospital."""
+        return sum(
+            1 for agent in self.agent_lookup.values()
+            if agent.health > 0 and agent.hospitalized_at == location
+        )
+
+    def hospital_has_patient_capacity(self, location):
+        return (location in self.hospitals
+                and self.hospital_patient_count(location)
+                < self.hospital_patient_capacity(location))
 
     def has_school_activity(self, agents):
         return any(
@@ -372,7 +413,9 @@ class World:
             elif building_type in (6, 7, 11, 12):
                 self.houses[location] = set()
             if building_type in (1, 2, 4, 5, 8, 9, 10):
-                capacity = {1: 1, 2: 1, 4: 2, 5: 2, 8: 2, 9: 3, 10: 1}[building_type]
+                capacity = {1: 1, 2: 1, 4: 2, 5: max(0, int(self._setting(
+                    "Health & Disease", "hospital_max_doctors_for_capacity", 2
+                ))), 8: 2, 9: 3, 10: 1}[building_type]
                 self.building_jobs[location] = set()
                 self.job_capacities[location] = capacity
                 self.workplace_occupants[location] = set()

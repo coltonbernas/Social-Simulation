@@ -26,7 +26,17 @@
     "health_max": 100
   },
   "Health & Disease": {
-    "community_case_chance_per_turn": 0.001
+    "community_case_chance_per_turn": 0.001,
+    "hospital_base_patient_capacity": 6,
+    "hospital_patients_per_doctor": 2,
+    "hospital_max_doctors_for_capacity": 2,
+    "disease_health_damage_per_turn": {
+      "common_cold": 2,
+      "covid_19": 4,
+      "influenza": 4,
+      "measles": 6,
+      "pneumonic_plague": 8
+    }
   },
     "Economy & Jobs": {
     "type_1_income_per_year": 36525,

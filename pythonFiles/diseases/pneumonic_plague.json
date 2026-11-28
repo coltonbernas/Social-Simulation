@@ -2,5 +2,6 @@
     "name": "Pneumonic plague",
     "pattern": "001110",
     "r0_estimate": 2.4,
-    "contagiousness": 0.58
+    "contagiousness": 0.58,
+    "health_damage_per_turn": 8
 }
