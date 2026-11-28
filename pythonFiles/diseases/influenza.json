@@ -1,5 +1,6 @@
 {
     "name": "Influenza",
     "pattern": "01101011",
-    "contagiousness": 0.4
+    "r0_estimate": 1.28,
+    "contagiousness": 0.22
 }

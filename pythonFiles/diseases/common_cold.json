@@ -1,5 +1,6 @@
 {
     "name": "Common cold",
     "pattern": "101101",
+    "r0_estimate": 2.0,
     "contagiousness": 0.5
 }

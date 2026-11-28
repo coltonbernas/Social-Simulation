@@ -1,5 +1,6 @@
 {
     "name": "COVID-19",
     "pattern": "110010111001",
-    "contagiousness": 5.5
+    "r0_estimate": 2.2,
+    "contagiousness": 0.55
 }

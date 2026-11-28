@@ -1,8 +1,10 @@
 import json
+import math
 import os
 from pathlib import Path
 import random
 from dataclasses import dataclass
+from typing import Optional
 
 try:
     from .config import disease_chance_per_turn
@@ -14,11 +16,31 @@ IMMUNE_SYSTEM_LENGTH = 50
 DISEASES_DIR = Path(__file__).resolve().parent / "diseases"
 
 
+def contagiousness_from_r0(r0_estimate):
+    """Approximate a per-contact probability from an R0 value."""
+    if (isinstance(r0_estimate, bool)
+            or not isinstance(r0_estimate, (int, float))
+            or not math.isfinite(r0_estimate)
+            or r0_estimate < 1):
+        raise ValueError("R0 must be a finite number greater than or equal to 1")
+    return 1 - 1 / r0_estimate
+
+
 @dataclass(frozen=True)
 class Disease:
     name: str
     pattern: str
     contagiousness: float
+    r0_estimate: Optional[float] = None
+
+    def __post_init__(self):
+        if (isinstance(self.contagiousness, bool)
+                or not isinstance(self.contagiousness, (int, float))
+                or not math.isfinite(self.contagiousness)
+                or not 0 <= self.contagiousness <= 1):
+            raise ValueError("Contagiousness must be a number between 0 and 1")
+        if self.r0_estimate is not None:
+            contagiousness_from_r0(self.r0_estimate)
 
 
 def _load_all_diseases():
@@ -33,7 +55,8 @@ def _load_all_diseases():
                 registry[d_id] = Disease(
                     name=data.get("name", d_id.replace("_", " ").title()),
                     pattern=data.get("pattern", ""),
-                    contagiousness=data.get("contagiousness", 0.5)
+                    contagiousness=data.get("contagiousness", 0.5),
+                    r0_estimate=data.get("r0_estimate"),
                 )
         except Exception as e:
             print(f"Failed to load disease from {path}: {e}")
@@ -54,11 +77,18 @@ DISEASES = _load_all_diseases()
 DISEASE_ORDER = sorted(list(DISEASES.keys()))
 
 
-def register_custom_disease(name, pattern, contagiousness):
+def register_custom_disease(name, pattern, contagiousness=None, r0_estimate=None):
     """Register a new disease pattern at runtime and save to disk."""
     d_id = name.lower().replace(" ", "_")
-    
-    disease = Disease(name, pattern, contagiousness)
+
+    if r0_estimate is not None:
+        if contagiousness is not None:
+            raise ValueError("Provide either contagiousness or R0, not both")
+        contagiousness = contagiousness_from_r0(r0_estimate)
+    elif contagiousness is None:
+        raise ValueError("Provide either contagiousness or R0")
+
+    disease = Disease(name, pattern, contagiousness, r0_estimate)
     
     # Save to disk
     if not DISEASES_DIR.exists():
@@ -66,12 +96,15 @@ def register_custom_disease(name, pattern, contagiousness):
     
     path = DISEASES_DIR / f"{d_id}.json"
     try:
+        data = {
+            "name": name,
+            "pattern": pattern,
+            "contagiousness": contagiousness,
+        }
+        if r0_estimate is not None:
+            data["r0_estimate"] = r0_estimate
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({
-                "name": name,
-                "pattern": pattern,
-                "contagiousness": contagiousness
-            }, f, indent=4)
+            json.dump(data, f, indent=4)
     except Exception as e:
         print(f"Failed to save custom disease to {path}: {e}")
         

@@ -364,13 +364,14 @@ class ConfigDialog(tk.Toplevel):
     def _open_disease_builder(self):
         builder = tk.Toplevel(self)
         builder.title("Custom Disease Builder")
-        builder.geometry("400x300")
+        builder.geometry("500x390")
         builder.configure(bg=BG)
         builder.transient(self)
         builder.grab_set()
 
         frame = ttk.Frame(builder, padding=20)
         frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
 
         ttk.Label(frame, text="Disease Name:").grid(row=0, column=0, sticky="w", pady=5)
         name_entry = ttk.Entry(frame)
@@ -380,15 +381,83 @@ class ConfigDialog(tk.Toplevel):
         pattern_entry = ttk.Entry(frame)
         pattern_entry.grid(row=1, column=1, sticky="ew", pady=5)
 
-        ttk.Label(frame, text="Contagiousness:").grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Label(frame, text="Set contagiousness using:").grid(row=2, column=0, sticky="w", pady=5)
+        mode_var = tk.StringVar(value="probability")
+        mode_frame = ttk.Frame(frame)
+        mode_frame.grid(row=2, column=1, sticky="w", pady=5)
+        ttk.Radiobutton(
+            mode_frame, text="Per-contact probability", variable=mode_var,
+            value="probability",
+        ).pack(anchor="w")
+        ttk.Radiobutton(
+            mode_frame, text="R0 value", variable=mode_var, value="r0",
+        ).pack(anchor="w")
+
+        probability_input_label = ttk.Label(frame, text="Per-contact probability (0-1):")
+        probability_input_label.grid(row=3, column=0, sticky="w", pady=5)
         contag_var = tk.DoubleVar(value=0.5)
-        contag_scale = tk.Scale(frame, from_=0.0, to=10.0, resolution=0.1, variable=contag_var, orient="horizontal", bg=BG, fg=TEXT, highlightthickness=0)
-        contag_scale.grid(row=2, column=1, sticky="ew", pady=5)
+        contag_scale = tk.Scale(
+            frame, from_=0.0, to=1.0, resolution=0.01, variable=contag_var,
+            orient="horizontal", bg=BG, fg=TEXT, highlightthickness=0,
+        )
+        contag_scale.grid(row=3, column=1, sticky="ew", pady=5)
+
+        r0_input_label = ttk.Label(frame, text="R0 (must be >= 1):")
+        r0_input_label.grid(row=4, column=0, sticky="w", pady=5)
+        r0_var = tk.StringVar(value="2.0")
+        r0_entry = ttk.Entry(frame, textvariable=r0_var)
+        r0_entry.grid(row=4, column=1, sticky="ew", pady=5)
+
+        probability_result_label = ttk.Label(frame, text="Resulting probability:")
+        probability_result_label.grid(row=5, column=0, sticky="w", pady=5)
+        probability_var = tk.StringVar()
+        probability_result = ttk.Label(frame, textvariable=probability_var)
+        probability_result.grid(row=5, column=1, sticky="w", pady=5)
+
+        try:
+            from disease import contagiousness_from_r0, register_custom_disease, DISEASES_DIR
+        except ImportError:
+            from pythonFiles.disease import contagiousness_from_r0, register_custom_disease, DISEASES_DIR
+
+        def update_probability(*_):
+            if mode_var.get() == "r0":
+                try:
+                    probability = contagiousness_from_r0(float(r0_var.get()))
+                except ValueError:
+                    probability_var.set("Enter a valid R0 >= 1")
+                    return
+                probability_var.set("{:.2f}".format(probability))
+            else:
+                probability_var.set("{:.2f}".format(contag_var.get()))
+
+        def update_mode():
+            r0_mode = mode_var.get() == "r0"
+            if r0_mode:
+                probability_input_label.grid_remove()
+                contag_scale.grid_remove()
+                r0_input_label.grid()
+                r0_entry.grid()
+                probability_result_label.grid()
+                probability_result.grid()
+            else:
+                probability_input_label.grid()
+                contag_scale.grid()
+                r0_input_label.grid_remove()
+                r0_entry.grid_remove()
+                probability_result_label.grid_remove()
+                probability_result.grid_remove()
+            update_probability()
+
+        for radio in mode_frame.winfo_children():
+            radio.configure(command=update_mode)
+        r0_var.trace_add("write", update_probability)
+        contag_scale.configure(command=update_probability)
+        update_probability()
+        update_mode()
 
         def save():
             name = name_entry.get().strip()
             pattern = pattern_entry.get().strip()
-            contag = contag_var.get()
 
             if not name:
                 messagebox.showerror("Error", "Name is required.")
@@ -397,26 +466,40 @@ class ConfigDialog(tk.Toplevel):
                 messagebox.showerror("Error", "Pattern must be binary and <= 50 bits.")
                 return
 
-            try:
-                from disease import register_custom_disease, DISEASES_DIR
-            except ImportError:
-                from pythonFiles.disease import register_custom_disease, DISEASES_DIR
-            
-            d_id = register_custom_disease(name, pattern, contag)
+            r0_estimate = None
+            if mode_var.get() == "r0":
+                try:
+                    r0_estimate = float(r0_var.get())
+                    contag = contagiousness_from_r0(r0_estimate)
+                except ValueError:
+                    messagebox.showerror("Error", "R0 must be a finite number greater than or equal to 1.")
+                    return
+            else:
+                contag = contag_var.get()
+
+            d_id = register_custom_disease(
+                name,
+                pattern,
+                contagiousness=contag if r0_estimate is None else None,
+                r0_estimate=r0_estimate,
+            )
             
             # Save to the current result configuration so it persists in the session
             if "Custom Diseases" not in self.result:
                 self.result["Custom Diseases"] = {}
-            self.result["Custom Diseases"][d_id] = {
+            disease_data = {
                 "name": name,
                 "pattern": pattern,
                 "contagiousness": contag
             }
+            if r0_estimate is not None:
+                disease_data["r0_estimate"] = r0_estimate
+            self.result["Custom Diseases"][d_id] = disease_data
             
             messagebox.showinfo("Success", f"Disease '{name}' saved to {DISEASES_DIR}\\{d_id}.json and added to session!")
             builder.destroy()
 
-        ttk.Button(frame, text="Create", command=save).grid(row=3, column=0, columnspan=2, pady=20)
+        ttk.Button(frame, text="Create", command=save).grid(row=6, column=0, columnspan=2, pady=20)
 
     def _cleanup_bindings(self):
         self.unbind_all("<MouseWheel>")

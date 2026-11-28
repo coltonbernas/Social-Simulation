@@ -653,7 +653,11 @@ class SimulationWindow:
                 register_custom_disease(
                     d_info.get("name", d_id),
                     d_info.get("pattern", ""),
-                    d_info.get("contagiousness", 0.5)
+                    contagiousness=(
+                        None if d_info.get("r0_estimate") is not None
+                        else d_info.get("contagiousness", 0.5)
+                    ),
+                    r0_estimate=d_info.get("r0_estimate"),
                 )
 
         # Pass the config dictionary to World if supported by your constructor

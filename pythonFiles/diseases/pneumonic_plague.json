@@ -1,5 +1,6 @@
 {
     "name": "Pneumonic plague",
     "pattern": "001110",
-    "contagiousness": 0.25
+    "r0_estimate": 2.4,
+    "contagiousness": 0.58
 }

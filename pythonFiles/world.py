@@ -108,7 +108,11 @@ class World:
                 register_custom_disease(
                     d_info.get("name", d_id),
                     d_info.get("pattern", ""),
-                    d_info.get("contagiousness", 0.5)
+                    contagiousness=(
+                        None if d_info.get("r0_estimate") is not None
+                        else d_info.get("contagiousness", 0.5)
+                    ),
+                    r0_estimate=d_info.get("r0_estimate"),
                 )
             # Re-initialize vaccine progress to include new diseases
             self.vaccine_progress = {d_id: 0.0 for d_id in DISEASES}
